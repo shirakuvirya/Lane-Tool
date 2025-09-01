@@ -511,11 +511,11 @@
         // --- FIX: Swapped Ctrl and Ctrl+Shift logic ---
         if (e.ctrlKey && e.shiftKey) {
             controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE; // Orbit
-            cameraModeIndicator.textContent = "Camera Mode: Pan";
+            cameraModeIndicator.textContent = "Camera Mode: Orbit";
             cameraModeIndicator.style.display = 'block';
         } else if (e.ctrlKey) {
             controls.mouseButtons.LEFT = THREE.MOUSE.PAN; // Pan
-            cameraModeIndicator.textContent = "Camera Mode: Orbit";
+            cameraModeIndicator.textContent = "Camera Mode: Pan";
             cameraModeIndicator.style.display = 'block';
         }
     }
