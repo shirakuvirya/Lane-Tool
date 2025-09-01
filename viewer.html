@@ -17,6 +17,7 @@
     html, body { height:100%; margin:0; background:#0b0e14; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
     #app { position:fixed; inset:0; cursor: default; }
     #app.draggable { cursor: grab; }
+    #app.delete-mode { cursor: crosshair; }
     #ui {
       position: fixed; top: 12px; left: 12px; z-index: 10;
       display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
@@ -28,9 +29,7 @@
       padding:8px 12px; cursor:pointer; font-size:14px;
     }
     select {
-        -webkit-appearance: none;
-        -moz-appearance: none;
-        appearance: none;
+        -webkit-appearance: none; -moz-appearance: none; appearance: none;
         background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23FFFFFF%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
         background-repeat: no-repeat;
         background-position: right 12px top 50%;
@@ -52,49 +51,34 @@
         z-index: 100; display: none;
     }
     #info-panel {
-        position: fixed;
-        top: 12px;
-        right: -300px; /* Start off-screen */
-        width: 260px;
-        background: rgba(20,24,33,0.8);
-        border: 1px solid rgba(255,255,255,0.08);
-        border-radius: 10px;
-        padding: 15px;
-        color: #eaeefb;
-        backdrop-filter: blur(8px);
-        transition: right 0.3s ease-in-out;
-        z-index: 10;
+        position: fixed; top: 12px; right: -300px; width: 260px;
+        background: rgba(20,24,33,0.8); border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 10px; padding: 15px; color: #eaeefb;
+        backdrop-filter: blur(8px); transition: right 0.3s ease-in-out; z-index: 10;
     }
-    #info-panel.visible {
-        right: 12px; /* Slide in */
-    }
+    #info-panel.visible { right: 12px; }
     #info-panel h3 {
-        margin-top: 0;
-        margin-bottom: 15px;
-        color: #fff;
-        font-weight: 500;
-        border-bottom: 1px solid #3a4150;
-        padding-bottom: 10px;
+        margin-top: 0; margin-bottom: 15px; color: #fff; font-weight: 500;
+        border-bottom: 1px solid #3a4150; padding-bottom: 10px;
     }
     .info-grid {
-        display: grid;
-        grid-template-columns: 50px 1fr;
-        gap: 8px;
-        font-size: 14px;
+        display: grid; grid-template-columns: 50px 1fr; gap: 8px; font-size: 14px;
     }
     .info-grid label {
-        font-weight: 500;
-        color: #9fb0d0;
-        background: none;
-        border: none;
-        padding: 0;
+        font-weight: 500; color: #9fb0d0; background: none; border: none; padding: 0;
     }
     .info-grid span {
-        font-family: monospace;
-        background: #0b0e14;
-        padding: 4px 8px;
-        border-radius: 4px;
-        color: #c8d3f5;
+        font-family: monospace; background: #0b0e14; padding: 4px 8px;
+        border-radius: 4px; color: #c8d3f5;
+    }
+    /* --- NEW: Edit Mode Sub-toolbar --- */
+    #edit-toolbar {
+        display: none; /* Hidden by default */
+        gap: 8px;
+    }
+    #edit-toolbar button.active {
+        background-color: #5476ff;
+        border-color: #839eff;
     }
   </style>
 </head>
@@ -111,6 +95,12 @@
     <button id="save-waypoints" disabled>Save Waypoints (.db)</button>
     <span style="border-left: 1px solid #444; margin: 0 4px;"></span>
     <button id="edit" disabled>Toggle Edit Mode</button>
+    <!-- NEW: Sub-toolbar for edit actions -->
+    <div id="edit-toolbar">
+        <button id="edit-add">Add</button>
+        <button id="edit-move" class="active">Move</button>
+        <button id="edit-delete">Delete</button>
+    </div>
     <select id="view-select">
       <option value="perspective">Perspective View</option>
       <option value="top">Top-Down View</option>
@@ -141,7 +131,7 @@
     Orbit: Left-drag • Pan: Right-drag • Zoom: Wheel
   </div>
   <div id="hint-edit" class="hint-bar" style="display:none;">
-    <b>Edit Mode:</b> Click point to select • Drag to move • Click plane to add • Press 'Delete' to remove
+    <b>Edit Mode:</b> Select a mode (Add, Move, Delete). <b>Hold Ctrl for camera controls.</b>
   </div>
 
   <script type="module">
@@ -175,9 +165,11 @@
     let mapObject = null;
     let waypointsObject = null;
     let editMode = false;
+    let editSubMode = 'move'; // NEW: 'add', 'move', 'delete'
     let selectedPointIndex = null;
     let isDragging = false;
-    let isRotationLocked = false; // NEW state for rotation lock
+    let isRotationLocked = false; 
+    let isCameraOverrideActive = false; // NEW: Ctrl key state
     let indexToDbId = [];
     let dynamicPointSize = 0.05;
     
@@ -187,6 +179,7 @@
     const raycastPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
     const infoPanel = document.getElementById('info-panel');
     const hintMain = document.getElementById('hint');
+    const editToolbar = document.getElementById('edit-toolbar');
 
     // --- Database Setup ---
     let db = null;
@@ -203,7 +196,7 @@
     }
 
     // --- Waypoint Loading and Management ---
-    function clearWaypoints() {
+    function clearVisualWaypoints() {
         if (waypointsObject) {
             scene.remove(waypointsObject);
             waypointsObject.geometry.dispose();
@@ -212,31 +205,12 @@
         }
         selectPoint(null);
         indexToDbId = [];
-        if (db) {
-            db.close();
-            db = null;
-        }
-        updateButtonState();
     }
 
-    async function loadWaypointsFromDB(file) {
-        if (!SQL) return alert("Database engine is not ready.");
-        clearWaypoints();
-        document.getElementById('loader').style.display = 'block';
+    async function refreshWaypointsFromDB() {
+        clearVisualWaypoints();
+        if (!db) return;
 
-        await new Promise(resolve => setTimeout(resolve, 50));
-
-        try {
-            const buffer = await file.arrayBuffer();
-            db = new SQL.Database(new Uint8Array(buffer));
-            const res = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='waypoints';");
-            if (res.length === 0) throw new Error("Database does not contain a 'waypoints' table.");
-        } catch (err) {
-            alert(`Error loading database: ${err.message}`);
-            document.getElementById('loader').style.display = 'none';
-            return;
-        }
-        
         const stmt = db.prepare("SELECT id, x, y, z FROM waypoints;");
         const positions = [];
         const colors = [];
@@ -263,20 +237,45 @@
         waypointsObject = new THREE.Points(geometry, material);
         scene.add(waypointsObject);
         
+        if (waypointsObject && camera) {
+            waypointsObject.material.size = camera.isPerspectiveCamera ? dynamicPointSize : 3.0;
+            waypointsObject.material.sizeAttenuation = camera.isPerspectiveCamera;
+            waypointsObject.material.needsUpdate = true;
+        }
+    }
+
+    async function loadWaypointsFromFile(file) {
+        if (!SQL) return alert("Database engine is not ready.");
+        
+        if (db) { db.close(); db = null; }
+        clearVisualWaypoints();
+        document.getElementById('loader').style.display = 'block';
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        try {
+            const buffer = await file.arrayBuffer();
+            db = new SQL.Database(new Uint8Array(buffer));
+            const res = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='waypoints';");
+            if (res.length === 0) throw new Error("Database does not contain a 'waypoints' table.");
+        } catch (err) {
+            alert(`Error loading database: ${err.message}`);
+            db = null;
+        }
+        
+        await refreshWaypointsFromDB();
+        
         updateButtonState();
         document.getElementById('loader').style.display = 'none';
+        setView(viewSelect.value);
     }
 
     function createNewWaypointSet() {
         if (!SQL) return alert("Database engine is not ready.");
-        clearWaypoints();
+        if (db) db.close();
+        
         db = new SQL.Database();
         db.run(WAYPOINT_TABLE_SQL);
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.Float32BufferAttribute([], 3));
-        geometry.setAttribute('color', new THREE.Float32BufferAttribute([], 3));
-        waypointsObject = new THREE.Points(geometry, new THREE.PointsMaterial({ size: dynamicPointSize, vertexColors: true }));
-        scene.add(waypointsObject);
+        refreshWaypointsFromDB();
         updateButtonState();
     }
 
@@ -293,10 +292,9 @@
     
     // --- Point Manipulation ---
     async function addPoint(position) {
-        if (!db || !waypointsObject) return;
+        if (!db) return;
         db.run("INSERT INTO waypoints (x, y, z) VALUES (?, ?, ?)", [position.x, position.y, position.z]);
-        const data = db.export();
-        await loadWaypointsFromDB(new File([data], "temp.db", {type: "application/x-sqlite3"}));
+        await refreshWaypointsFromDB();
     }
     
     function updatePointInDb(db_id, position) {
@@ -304,13 +302,11 @@
         db.run("UPDATE waypoints SET x = ?, y = ?, z = ? WHERE id = ?", [position.x, position.y, position.z, db_id]);
     }
 
-    function deletePoint() {
-        if (selectedPointIndex === null) return;
-        const db_id = indexToDbId[selectedPointIndex];
+    async function deletePointByIndex(index) {
+        if (index === null) return;
+        const db_id = indexToDbId[index];
         db.run("DELETE FROM waypoints WHERE id = ?", [db_id]);
-        const positions = waypointsObject.geometry.attributes.position;
-        positions.setXYZ(selectedPointIndex, NaN, NaN, NaN);
-        positions.needsUpdate = true;
+        await refreshWaypointsFromDB(); // Reload to get correct indices
         selectPoint(null);
     }
 
@@ -358,29 +354,44 @@
 
     // --- Event Listeners ---
     function onPointerDown(event) {
-        if (!editMode || !waypointsObject) return;
+        if (!editMode || !waypointsObject || isCameraOverrideActive) return;
+        
         const rect = renderer.domElement.getBoundingClientRect();
         pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
         raycaster.setFromCamera(pointer, camera);
+
         const intersects = raycaster.intersectObject(waypointsObject);
-        if (intersects.length > 0) {
-            const index = intersects[0].index;
-            selectPoint(index);
-            isDragging = true;
-            controls.enabled = false;
-            app.classList.add('draggable');
-        } else {
-            const intersection = new THREE.Vector3();
-            if (raycaster.ray.intersectPlane(raycastPlane, intersection)) {
-                addPoint(intersection);
-            }
-            selectPoint(null);
+        
+        switch (editSubMode) {
+            case 'add':
+                const intersection = new THREE.Vector3();
+                if (raycaster.ray.intersectPlane(raycastPlane, intersection)) {
+                    addPoint(intersection);
+                }
+                break;
+            case 'move':
+                if (intersects.length > 0) {
+                    const index = intersects[0].index;
+                    selectPoint(index);
+                    isDragging = true;
+                    controls.enabled = false;
+                    app.classList.add('draggable');
+                } else {
+                    selectPoint(null);
+                }
+                break;
+            case 'delete':
+                if (intersects.length > 0) {
+                    deletePointByIndex(intersects[0].index);
+                }
+                break;
         }
     }
 
     function onPointerMove(event) {
-        if (!editMode || !isDragging || selectedPointIndex === null || !waypointsObject) return;
+        if (!editMode || !isDragging || selectedPointIndex === null || !waypointsObject || isCameraOverrideActive) return;
+        
         const rect = renderer.domElement.getBoundingClientRect();
         pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -397,6 +408,8 @@
     }
 
     function onPointerUp(event) {
+        if (isCameraOverrideActive) return;
+
         if (editMode && isDragging && selectedPointIndex !== null) {
             const db_id = indexToDbId[selectedPointIndex];
             const posAttr = waypointsObject.geometry.attributes.position;
@@ -405,7 +418,7 @@
             updateInfoPanel(selectedPointIndex);
         }
         isDragging = false;
-        controls.enabled = true;
+        if(controls) controls.enabled = true;
         app.classList.remove('draggable');
     }
 
@@ -416,7 +429,7 @@
     const saveWaypointsBtn = document.getElementById('save-waypoints');
     const editBtn = document.getElementById('edit');
     const viewSelect = document.getElementById('view-select');
-    const lockRotationBtn = document.getElementById('lock-rotation'); // NEW
+    const lockRotationBtn = document.getElementById('lock-rotation');
     
     function updateButtonState() {
         const hasDb = db !== null;
@@ -428,6 +441,7 @@
     function toggleEditMode() {
         editMode = !editMode;
         editBtn.style.background = editMode ? '#5476ff' : '#2a2f3a';
+        editToolbar.style.display = editMode ? 'flex' : 'none';
         document.getElementById('hint').style.display = editMode ? 'none' : 'block';
         document.getElementById('hint-edit').style.display = editMode ? 'block' : 'none';
         if (!editMode) selectPoint(null);
@@ -436,7 +450,7 @@
     mapFileInput.addEventListener('change', e => e.target.files[0] && onMapFileSelect(e.target.files[0]));
     waypointFileInput.addEventListener('change', e => {
         if (e.target.files[0]) {
-            loadWaypointsFromDB(e.target.files[0]);
+            loadWaypointsFromFile(e.target.files[0]);
             e.target.value = '';
         }
     });
@@ -445,7 +459,6 @@
     editBtn.addEventListener('click', toggleEditMode);
     viewSelect.addEventListener('change', () => setView(viewSelect.value));
 
-    // NEW: Event listener for the lock button
     lockRotationBtn.addEventListener('click', () => {
         isRotationLocked = !isRotationLocked;
         if (controls) {
@@ -454,17 +467,38 @@
         lockRotationBtn.textContent = isRotationLocked ? 'Unlock Rotation' : 'Lock Rotation';
         lockRotationBtn.style.background = isRotationLocked ? '#5476ff' : '#2a2f3a';
     });
+
+    // NEW: Listeners for edit sub-modes
+    const editModeButtons = {
+        add: document.getElementById('edit-add'),
+        move: document.getElementById('edit-move'),
+        delete: document.getElementById('edit-delete'),
+    };
+    Object.entries(editModeButtons).forEach(([mode, button]) => {
+        button.addEventListener('click', () => {
+            editSubMode = mode;
+            Object.values(editModeButtons).forEach(btn => btn.classList.remove('active'));
+            button.classList.add('active');
+            app.classList.toggle('delete-mode', mode === 'delete');
+        });
+    });
     
     renderer.domElement.addEventListener('pointerdown', onPointerDown);
     renderer.domElement.addEventListener('pointermove', onPointerMove);
     renderer.domElement.addEventListener('pointerup', onPointerUp);
 
     window.addEventListener('keydown', (e) => {
-      if (editMode && (e.key === 'Delete' || e.key === 'Backspace')) {
-          deletePoint();
-      }
+        if (editMode && e.key === 'Control') {
+            isCameraOverrideActive = true;
+            controls.enabled = true; // Make sure camera controls are active
+        }
     });
-    
+    window.addEventListener('keyup', (e) => {
+        if (e.key === 'Control') {
+            isCameraOverrideActive = false;
+        }
+    });
+
     // --- Helper & View Functions ---
     function onMapFileSelect(file) {
         const url = URL.createObjectURL(file);
@@ -473,28 +507,27 @@
             if (mapObject) scene.remove(mapObject);
             mapObject = geometryOrPoints.isPoints ? geometryOrPoints : new THREE.Points(geometryOrPoints, new THREE.PointsMaterial({ size: 0.01, vertexColors: true}));
             scene.add(mapObject);
-            setView(viewSelect.value); // Re-frame camera on new map
+            setView(viewSelect.value);
             URL.revokeObjectURL(url);
         });
     }
 
     function setView(viewType) {
-        if (controls) {
-            controls.dispose();
-        }
+        if (controls) { controls.dispose(); }
 
         const aspect = window.innerWidth / window.innerHeight;
         let targetObject = mapObject || gridHelper;
         const box = new THREE.Box3().setFromObject(targetObject);
         const center = box.getCenter(new THREE.Vector3());
         const size = box.getSize(new THREE.Vector3());
-        const maxDim = Math.max(size.x, size.y, size.z) || 10; // Fallback for empty scene
+        const maxDim = Math.max(size.x, size.y, size.z) || 10;
 
         if (viewType === 'perspective') {
             camera = new THREE.PerspectiveCamera(60, aspect, 0.01, 10000);
             camera.up.set(0, 0, 1);
             const camDist = maxDim * 1.5;
             camera.position.copy(center).add(new THREE.Vector3(camDist * 0.7, -camDist * 0.7, camDist * 0.7));
+            raycastPlane.set(new THREE.Vector3(0, 0, 1), 0); 
         } else {
             const orthoSize = maxDim * 0.6;
             camera = new THREE.OrthographicCamera(-orthoSize * aspect, orthoSize * aspect, orthoSize, -orthoSize, -maxDim * 5, maxDim * 5);
@@ -502,10 +535,13 @@
             
             if (viewType === 'top') {
                 camera.position.set(center.x, center.y, center.z + maxDim);
+                raycastPlane.set(new THREE.Vector3(0, 0, 1), 0); 
             } else if (viewType === 'front') {
                 camera.position.set(center.x, center.y - maxDim, center.z);
+                raycastPlane.set(new THREE.Vector3(0, 1, 0), 0); 
             } else if (viewType === 'side') {
                 camera.position.set(center.x + maxDim, center.y, center.z);
+                raycastPlane.set(new THREE.Vector3(1, 0, 0), 0); 
             }
         }
         
@@ -515,17 +551,10 @@
         controls.enableDamping = true;
         controls.target.copy(center);
 
-        controls.mouseButtons = {
-            LEFT: THREE.MOUSE.ROTATE,
-            MIDDLE: THREE.MOUSE.DOLLY,
-            RIGHT: THREE.MOUSE.PAN
-        }
-        
-        // Apply rotation lock status
+        controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN };
         controls.enableRotate = !isRotationLocked;
-        
-        controls.minPolarAngle = 0; // Reset
-        controls.maxPolarAngle = Math.PI; // Reset
+        controls.minPolarAngle = 0; 
+        controls.maxPolarAngle = Math.PI; 
 
         if (viewType === 'top') {
             controls.minPolarAngle = 0;
@@ -536,10 +565,10 @@
         }
         
         hintMain.innerHTML = 'Orbit: Left-drag • Pan: Right-drag • Zoom: Wheel';
-
         dynamicPointSize = Math.max(maxDim / 800, 0.02);
         if (waypointsObject) {
-            waypointsObject.material.size = dynamicPointSize;
+            waypointsObject.material.size = camera.isPerspectiveCamera ? dynamicPointSize : 3.0;
+            waypointsObject.material.sizeAttenuation = camera.isPerspectiveCamera;
             waypointsObject.material.needsUpdate = true;
         }
     }
