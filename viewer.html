@@ -117,6 +117,7 @@
       <option value="front">Front View</option>
       <option value="side">Side View</option>
     </select>
+    <button id="lock-rotation">Lock Rotation</button>
   </div>
   
   <div id="loader">Loading Waypoints...</div>
@@ -176,6 +177,7 @@
     let editMode = false;
     let selectedPointIndex = null;
     let isDragging = false;
+    let isRotationLocked = false; // NEW state for rotation lock
     let indexToDbId = [];
     let dynamicPointSize = 0.05;
     
@@ -414,6 +416,7 @@
     const saveWaypointsBtn = document.getElementById('save-waypoints');
     const editBtn = document.getElementById('edit');
     const viewSelect = document.getElementById('view-select');
+    const lockRotationBtn = document.getElementById('lock-rotation'); // NEW
     
     function updateButtonState() {
         const hasDb = db !== null;
@@ -441,6 +444,16 @@
     saveWaypointsBtn.addEventListener('click', saveWaypointsToDB);
     editBtn.addEventListener('click', toggleEditMode);
     viewSelect.addEventListener('change', () => setView(viewSelect.value));
+
+    // NEW: Event listener for the lock button
+    lockRotationBtn.addEventListener('click', () => {
+        isRotationLocked = !isRotationLocked;
+        if (controls) {
+            controls.enableRotate = !isRotationLocked;
+        }
+        lockRotationBtn.textContent = isRotationLocked ? 'Unlock Rotation' : 'Lock Rotation';
+        lockRotationBtn.style.background = isRotationLocked ? '#5476ff' : '#2a2f3a';
+    });
     
     renderer.domElement.addEventListener('pointerdown', onPointerDown);
     renderer.domElement.addEventListener('pointermove', onPointerMove);
@@ -508,17 +521,16 @@
             RIGHT: THREE.MOUSE.PAN
         }
         
-        // --- UPDATED: AXIS-LOCKED ORBIT LOGIC ---
-        controls.enableRotate = true; // Always allow rotation
+        // Apply rotation lock status
+        controls.enableRotate = !isRotationLocked;
+        
         controls.minPolarAngle = 0; // Reset
         controls.maxPolarAngle = Math.PI; // Reset
 
         if (viewType === 'top') {
-            // Lock to looking straight down
             controls.minPolarAngle = 0;
             controls.maxPolarAngle = 0;
         } else if (viewType === 'front' || viewType === 'side') {
-            // Lock to horizontal rotation only
             controls.minPolarAngle = Math.PI / 2;
             controls.maxPolarAngle = Math.PI / 2;
         }
