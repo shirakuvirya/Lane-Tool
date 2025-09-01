@@ -80,19 +80,11 @@
         border-color: #839eff;
     }
     #camera-mode-indicator {
-        position: fixed;
-        bottom: 45px; /* Position above hint bar */
-        left: 50%;
+        position: fixed; bottom: 45px; left: 50%;
         transform: translateX(-50%);
-        background: rgba(84, 118, 255, 0.8);
-        color: #fff;
-        padding: 8px 14px;
-        border-radius: 8px;
-        font-size: 14px;
-        font-weight: 500;
-        z-index: 20;
-        display: none; /* Hidden by default */
-        backdrop-filter: blur(6px);
+        background: rgba(84, 118, 255, 0.8); color: #fff;
+        padding: 8px 14px; border-radius: 8px; font-size: 14px;
+        font-weight: 500; z-index: 20; display: none; backdrop-filter: blur(6px);
     }
   </style>
 </head>
@@ -111,8 +103,9 @@
     <button id="edit" disabled>Toggle Edit Mode</button>
     <div id="edit-toolbar">
         <button id="edit-add">Add</button>
-        <button id="edit-move" class="active">Move</button>
+        <button id="edit-move">Move</button>
         <button id="edit-delete">Delete</button>
+        <button id="edit-select" class="active">Select</button>
     </div>
     <select id="view-select">
       <option value="perspective">Perspective View</option>
@@ -144,7 +137,7 @@
     Orbit: Left-drag • Pan: Right-drag • Zoom: Wheel
   </div>
   <div id="hint-edit" class="hint-bar" style="display:none;">
-    <b>Edit Mode:</b> Select a mode (Add, Move, Delete). <b>Hold Ctrl for camera controls.</b>
+    <span id="edit-mode-hint">Click a start and end point to select a path.</span> <b>Hold Ctrl for camera.</b>
   </div>
   <div id="camera-mode-indicator"></div>
 
@@ -179,13 +172,14 @@
     let mapObject = null;
     let waypointsObject = null;
     let editMode = false;
-    let editSubMode = 'move';
-    let selectedPointIndex = null;
+    let editSubMode = 'select';
+    let selectedIndices = new Set();
     let isDragging = false;
     let isRotationLocked = false; 
     let isCameraOverrideActive = false;
     let indexToDbId = [];
     let dynamicPointSize = 0.05;
+    let pathSelectionStartIndex = null; // NEW
     
     const raycaster = new THREE.Raycaster();
     raycaster.params.Points.threshold = 0.05;
@@ -195,6 +189,7 @@
     const hintMain = document.getElementById('hint');
     const editToolbar = document.getElementById('edit-toolbar');
     const cameraModeIndicator = document.getElementById('camera-mode-indicator');
+    let dragStart3D, initialDragPositions;
 
     // --- Database Setup ---
     let db = null;
@@ -218,7 +213,7 @@
             waypointsObject.material.dispose();
             waypointsObject = null;
         }
-        selectPoint(null);
+        clearSelection();
         indexToDbId = [];
     }
 
@@ -228,28 +223,25 @@
 
         const stmt = db.prepare("SELECT id, x, y, z FROM waypoints;");
         const positions = [];
-        const colors = [];
-        const defaultColor = new THREE.Color(0xffff00);
+        indexToDbId = [];
 
         while (stmt.step()) {
             const row = stmt.get();
             indexToDbId.push(row[0]);
             positions.push(row[1], row[2], row[3]);
-            colors.push(defaultColor.r, defaultColor.g, defaultColor.b);
         }
         stmt.free();
 
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
         
         const material = new THREE.PointsMaterial({
             size: dynamicPointSize,
-            vertexColors: true,
-            sizeAttenuation: true
+            vertexColors: true, 
         });
 
         waypointsObject = new THREE.Points(geometry, material);
+        updateAllColors();
         scene.add(waypointsObject);
         
         if (waypointsObject && camera) {
@@ -311,62 +303,86 @@
         db.run("INSERT INTO waypoints (x, y, z) VALUES (?, ?, ?)", [position.x, position.y, position.z]);
         await refreshWaypointsFromDB();
     }
-    
-    function updatePointInDb(db_id, position) {
+
+    function updatePointsInDb(positionsMap) {
         if (!db) return;
-        db.run("UPDATE waypoints SET x = ?, y = ?, z = ? WHERE id = ?", [position.x, position.y, position.z, db_id]);
-    }
-
-    async function deletePointByIndex(index) {
-        if (index === null) return;
-        const db_id = indexToDbId[index];
-        db.run("DELETE FROM waypoints WHERE id = ?", [db_id]);
-        await refreshWaypointsFromDB();
-        selectPoint(null);
-    }
-
-    function selectPoint(index) {
-        if (!waypointsObject || !waypointsObject.geometry.attributes.color) {
-            infoPanel.classList.remove('visible');
-            return;
+        const stmt = db.prepare("UPDATE waypoints SET x = ?, y = ?, z = ? WHERE id = ?");
+        for (const [id, pos] of positionsMap.entries()) {
+            stmt.run([pos.x, pos.y, pos.z, id]);
         }
-        const colors = waypointsObject.geometry.attributes.color;
-        if (selectedPointIndex !== null && selectedPointIndex < colors.count) {
-            colors.setXYZ(selectedPointIndex, 1.0, 1.0, 0.0);
-        }
-        selectedPointIndex = index;
-        if (selectedPointIndex !== null && selectedPointIndex < colors.count) {
-            colors.setXYZ(selectedPointIndex, 1.0, 0.5, 0.0);
-            updateInfoPanel(selectedPointIndex);
-        } else {
-            infoPanel.classList.remove('visible');
-        }
-        colors.needsUpdate = true;
-    }
-
-    function updateInfoPanel(index) {
-        if (index === null || !db) {
-            infoPanel.classList.remove('visible');
-            return;
-        }
-        const db_id = indexToDbId[index];
-        const stmt = db.prepare("SELECT x, y, z, roll, pitch, yaw FROM waypoints WHERE id = :id");
-        const result = stmt.getAsObject({':id': db_id});
         stmt.free();
+    }
 
-        if (result.x !== undefined) {
-            document.getElementById('info-x').textContent = result.x.toFixed(4);
-            document.getElementById('info-y').textContent = result.y.toFixed(4);
-            document.getElementById('info-z').textContent = result.z.toFixed(4);
-            document.getElementById('info-roll').textContent = result.roll.toFixed(4);
-            document.getElementById('info-pitch').textContent = result.pitch.toFixed(4);
-            document.getElementById('info-yaw').textContent = result.yaw.toFixed(4);
+    async function deleteSelectedPoints() {
+        if (!db || selectedIndices.size === 0) return;
+        const idsToDelete = Array.from(selectedIndices).map(index => indexToDbId[index]);
+        if (idsToDelete.length === 0) return;
+        const placeholders = idsToDelete.map(() => '?').join(',');
+        db.run(`DELETE FROM waypoints WHERE id IN (${placeholders})`, idsToDelete);
+        await refreshWaypointsFromDB();
+    }
+
+    function clearSelection() {
+        selectedIndices.clear();
+        pathSelectionStartIndex = null;
+        updateAllColors();
+        updateInfoPanel();
+    }
+    
+    function updateAllColors() {
+        if (!waypointsObject) return;
+        const positions = waypointsObject.geometry.attributes.position;
+        const colors = new Float32Array(positions.count * 3);
+        const selectedColor = new THREE.Color(0xff8800); // Orange
+        const defaultColor = new THREE.Color(0xffff00); // Yellow
+        const startColor = new THREE.Color(0x00ff00); // Green
+
+        for (let i = 0; i < positions.count; i++) {
+            let color = defaultColor;
+            if (i === pathSelectionStartIndex) {
+                color = startColor;
+            } else if (selectedIndices.has(i)) {
+                color = selectedColor;
+            }
+            colors[i * 3] = color.r;
+            colors[i * 3 + 1] = color.g;
+            colors[i * 3 + 2] = color.b;
+        }
+        waypointsObject.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    }
+    
+    function updateInfoPanel() {
+        if (selectedIndices.size === 1) {
+            const index = selectedIndices.values().next().value;
+            const db_id = indexToDbId[index];
+            const stmt = db.prepare("SELECT x, y, z, roll, pitch, yaw FROM waypoints WHERE id = :id");
+            const result = stmt.getAsObject({':id': db_id});
+            stmt.free();
+
+            if (result.x !== undefined) {
+                infoPanel.querySelector('h3').textContent = `Waypoint #${db_id}`;
+                document.getElementById('info-x').textContent = result.x.toFixed(4);
+                document.getElementById('info-y').textContent = result.y.toFixed(4);
+                document.getElementById('info-z').textContent = result.z.toFixed(4);
+                document.getElementById('info-roll').textContent = result.roll.toFixed(4);
+                document.getElementById('info-pitch').textContent = result.pitch.toFixed(4);
+                document.getElementById('info-yaw').textContent = result.yaw.toFixed(4);
+                infoPanel.classList.add('visible');
+            }
+        } else if (selectedIndices.size > 1) {
+            infoPanel.querySelector('h3').textContent = `${selectedIndices.size} Waypoints Selected`;
+            document.getElementById('info-x').textContent = '---';
+            document.getElementById('info-y').textContent = '---';
+            document.getElementById('info-z').textContent = '---';
+            document.getElementById('info-roll').textContent = '---';
+            document.getElementById('info-pitch').textContent = '---';
+            document.getElementById('info-yaw').textContent = '---';
             infoPanel.classList.add('visible');
         } else {
             infoPanel.classList.remove('visible');
         }
     }
-
+    
     // --- Event Listeners ---
     function onPointerDown(event) {
         if (!editMode || !waypointsObject || isCameraOverrideActive) return;
@@ -380,63 +396,101 @@
         
         switch (editSubMode) {
             case 'add':
-                const intersection = new THREE.Vector3();
-                if (raycaster.ray.intersectPlane(raycastPlane, intersection)) {
-                    addPoint(intersection);
+                const intersectionAdd = new THREE.Vector3();
+                if (raycaster.ray.intersectPlane(raycastPlane, intersectionAdd)) addPoint(intersectionAdd);
+                break;
+            case 'select':
+                if (intersects.length > 0) {
+                    const clickedIndex = intersects[0].index;
+                    if (pathSelectionStartIndex === null) {
+                        clearSelection();
+                        pathSelectionStartIndex = clickedIndex;
+                        selectedIndices.add(clickedIndex);
+                    } else {
+                        const start = Math.min(pathSelectionStartIndex, clickedIndex);
+                        const end = Math.max(pathSelectionStartIndex, clickedIndex);
+                        for (let i = start; i <= end; i++) {
+                            selectedIndices.add(i);
+                        }
+                        pathSelectionStartIndex = null;
+                    }
+                    updateAllColors();
+                    updateInfoPanel();
+                } else {
+                    clearSelection();
                 }
                 break;
             case 'move':
-                if (intersects.length > 0) {
-                    const index = intersects[0].index;
-                    selectPoint(index);
+                if (intersects.length > 0 && selectedIndices.has(intersects[0].index)) {
                     isDragging = true;
                     controls.enabled = false;
                     app.classList.add('draggable');
-                } else {
-                    selectPoint(null);
+                    
+                    const intersectionMove = new THREE.Vector3();
+                    if (raycaster.ray.intersectPlane(raycastPlane, intersectionMove)) {
+                       dragStart3D = intersectionMove;
+                       initialDragPositions = new Map();
+                       const positions = waypointsObject.geometry.attributes.position;
+                       for (const index of selectedIndices) {
+                           initialDragPositions.set(index, new THREE.Vector3().fromBufferAttribute(positions, index));
+                       }
+                    }
                 }
                 break;
             case 'delete':
                 if (intersects.length > 0) {
-                    deletePointByIndex(intersects[0].index);
+                    const clickedIndex = intersects[0].index;
+                    if (!selectedIndices.has(clickedIndex)) {
+                        clearSelection();
+                        selectedIndices.add(clickedIndex);
+                    }
+                    deleteSelectedPoints();
                 }
                 break;
         }
     }
 
     function onPointerMove(event) {
-        if (!editMode || !isDragging || selectedPointIndex === null || !waypointsObject || isCameraOverrideActive) return;
+        if (isCameraOverrideActive || !editMode || !isDragging || selectedIndices.size === 0 || !waypointsObject) return;
         
         const rect = renderer.domElement.getBoundingClientRect();
         pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
         raycaster.setFromCamera(pointer, camera);
+        
         const intersection = new THREE.Vector3();
         if (raycaster.ray.intersectPlane(raycastPlane, intersection)) {
+            const delta = new THREE.Vector3().subVectors(intersection, dragStart3D);
             const positions = waypointsObject.geometry.attributes.position;
-            positions.setXYZ(selectedPointIndex, intersection.x, intersection.y, intersection.z);
+            
+            for (const [index, initialPos] of initialDragPositions.entries()) {
+                const newPos = new THREE.Vector3().addVectors(initialPos, delta);
+                positions.setXYZ(index, newPos.x, newPos.y, newPos.z);
+            }
             positions.needsUpdate = true;
-            document.getElementById('info-x').textContent = intersection.x.toFixed(4);
-            document.getElementById('info-y').textContent = intersection.y.toFixed(4);
-            document.getElementById('info-z').textContent = intersection.z.toFixed(4);
+            updateInfoPanel();
         }
     }
 
     function onPointerUp(event) {
         if (isCameraOverrideActive) return;
 
-        if (editMode && isDragging && selectedPointIndex !== null) {
-            const db_id = indexToDbId[selectedPointIndex];
-            const posAttr = waypointsObject.geometry.attributes.position;
-            const pos = new THREE.Vector3().fromBufferAttribute(posAttr, selectedPointIndex);
-            updatePointInDb(db_id, pos);
-            updateInfoPanel(selectedPointIndex);
-        }
-        isDragging = false;
-        if(controls) controls.enabled = true;
-        app.classList.remove('draggable');
-    }
+        if (isDragging) {
+            isDragging = false;
+            controls.enabled = true;
+            app.classList.remove('draggable');
 
+            const positionsToUpdate = new Map();
+            const positions = waypointsObject.geometry.attributes.position;
+            for (const index of selectedIndices) {
+                const db_id = indexToDbId[index];
+                const pos = new THREE.Vector3().fromBufferAttribute(positions, index);
+                positionsToUpdate.set(db_id, pos);
+            }
+            updatePointsInDb(positionsToUpdate);
+        }
+    }
+    
     // --- UI Wiring ---
     const mapFileInput = document.getElementById('map-file');
     const waypointFileInput = document.getElementById('waypoint-file');
@@ -459,7 +513,7 @@
         editToolbar.style.display = editMode ? 'flex' : 'none';
         document.getElementById('hint').style.display = editMode ? 'none' : 'block';
         document.getElementById('hint-edit').style.display = editMode ? 'block' : 'none';
-        if (!editMode) selectPoint(null);
+        if (!editMode) clearSelection();
     }
     
     mapFileInput.addEventListener('change', e => e.target.files[0] && onMapFileSelect(e.target.files[0]));
@@ -487,13 +541,28 @@
         add: document.getElementById('edit-add'),
         move: document.getElementById('edit-move'),
         delete: document.getElementById('edit-delete'),
+        select: document.getElementById('edit-select'),
     };
+    const hintSpan = document.getElementById('edit-mode-hint');
+
     Object.entries(editModeButtons).forEach(([mode, button]) => {
         button.addEventListener('click', () => {
+            if (mode !== 'select') { // If switching away from select mode, finalize any path selection
+                pathSelectionStartIndex = null;
+                updateAllColors();
+            }
             editSubMode = mode;
             Object.values(editModeButtons).forEach(btn => btn.classList.remove('active'));
             button.classList.add('active');
             app.classList.toggle('delete-mode', mode === 'delete');
+            
+            // Update hint text
+            switch(mode) {
+                case 'add': hintSpan.textContent = "Click on the grid to add a waypoint."; break;
+                case 'move': hintSpan.textContent = "Click and drag selected points to move them."; break;
+                case 'delete': hintSpan.textContent = "Click a waypoint or selection to delete."; break;
+                case 'select': hintSpan.textContent = "Click a start and end point to select a path."; break;
+            }
         });
     });
     
@@ -506,15 +575,13 @@
             cameraModeIndicator.style.display = 'none';
             return;
         }
-        
-        // --- FIX: Swapped Ctrl and Ctrl+Shift logic ---
         if (e.ctrlKey && e.shiftKey) {
-            controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE; // Orbit
-            cameraModeIndicator.textContent = "Camera Mode: Pan";
+            controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
+            cameraModeIndicator.textContent = "Camera Mode: Orbit";
             cameraModeIndicator.style.display = 'block';
         } else if (e.ctrlKey) {
-            controls.mouseButtons.LEFT = THREE.MOUSE.PAN; // Pan
-            cameraModeIndicator.textContent = "Camera Mode: Orbit";
+            controls.mouseButtons.LEFT = THREE.MOUSE.PAN;
+            cameraModeIndicator.textContent = "Camera Mode: Pan";
             cameraModeIndicator.style.display = 'block';
         }
     }
@@ -526,6 +593,8 @@
             updateCameraModeIndicator(e);
         } else if (editMode && e.key === 'Shift' && isCameraOverrideActive) {
             updateCameraModeIndicator(e);
+        } else if (editMode && (e.key === 'Delete' || e.key === 'Backspace')) {
+            deleteSelectedPoints();
         }
     });
 
@@ -643,3 +712,4 @@
   </script>
 </body>
 </html>
+
