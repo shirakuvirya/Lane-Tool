@@ -71,7 +71,6 @@
         font-family: monospace; background: #0b0e14; padding: 4px 8px;
         border-radius: 4px; color: #c8d3f5;
     }
-    /* --- NEW: Edit Mode Sub-toolbar --- */
     #edit-toolbar {
         display: none; /* Hidden by default */
         gap: 8px;
@@ -79,6 +78,21 @@
     #edit-toolbar button.active {
         background-color: #5476ff;
         border-color: #839eff;
+    }
+    #camera-mode-indicator {
+        position: fixed;
+        bottom: 45px; /* Position above hint bar */
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(84, 118, 255, 0.8);
+        color: #fff;
+        padding: 8px 14px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        z-index: 20;
+        display: none; /* Hidden by default */
+        backdrop-filter: blur(6px);
     }
   </style>
 </head>
@@ -95,7 +109,6 @@
     <button id="save-waypoints" disabled>Save Waypoints (.db)</button>
     <span style="border-left: 1px solid #444; margin: 0 4px;"></span>
     <button id="edit" disabled>Toggle Edit Mode</button>
-    <!-- NEW: Sub-toolbar for edit actions -->
     <div id="edit-toolbar">
         <button id="edit-add">Add</button>
         <button id="edit-move" class="active">Move</button>
@@ -133,6 +146,7 @@
   <div id="hint-edit" class="hint-bar" style="display:none;">
     <b>Edit Mode:</b> Select a mode (Add, Move, Delete). <b>Hold Ctrl for camera controls.</b>
   </div>
+  <div id="camera-mode-indicator"></div>
 
   <script type="module">
     import * as THREE from 'three';
@@ -165,11 +179,11 @@
     let mapObject = null;
     let waypointsObject = null;
     let editMode = false;
-    let editSubMode = 'move'; // NEW: 'add', 'move', 'delete'
+    let editSubMode = 'move';
     let selectedPointIndex = null;
     let isDragging = false;
     let isRotationLocked = false; 
-    let isCameraOverrideActive = false; // NEW: Ctrl key state
+    let isCameraOverrideActive = false;
     let indexToDbId = [];
     let dynamicPointSize = 0.05;
     
@@ -180,6 +194,7 @@
     const infoPanel = document.getElementById('info-panel');
     const hintMain = document.getElementById('hint');
     const editToolbar = document.getElementById('edit-toolbar');
+    const cameraModeIndicator = document.getElementById('camera-mode-indicator');
 
     // --- Database Setup ---
     let db = null;
@@ -306,7 +321,7 @@
         if (index === null) return;
         const db_id = indexToDbId[index];
         db.run("DELETE FROM waypoints WHERE id = ?", [db_id]);
-        await refreshWaypointsFromDB(); // Reload to get correct indices
+        await refreshWaypointsFromDB();
         selectPoint(null);
     }
 
@@ -468,7 +483,6 @@
         lockRotationBtn.style.background = isRotationLocked ? '#5476ff' : '#2a2f3a';
     });
 
-    // NEW: Listeners for edit sub-modes
     const editModeButtons = {
         add: document.getElementById('edit-add'),
         move: document.getElementById('edit-move'),
@@ -486,18 +500,45 @@
     renderer.domElement.addEventListener('pointerdown', onPointerDown);
     renderer.domElement.addEventListener('pointermove', onPointerMove);
     renderer.domElement.addEventListener('pointerup', onPointerUp);
+    
+    function updateCameraModeIndicator(e) {
+        if (!isCameraOverrideActive || viewSelect.value === 'perspective') {
+            cameraModeIndicator.style.display = 'none';
+            return;
+        }
+        
+        // --- FIX: Swapped Ctrl and Ctrl+Shift logic ---
+        if (e.ctrlKey && e.shiftKey) {
+            controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE; // Orbit
+            cameraModeIndicator.textContent = "Camera Mode: Pan";
+            cameraModeIndicator.style.display = 'block';
+        } else if (e.ctrlKey) {
+            controls.mouseButtons.LEFT = THREE.MOUSE.PAN; // Pan
+            cameraModeIndicator.textContent = "Camera Mode: Orbit";
+            cameraModeIndicator.style.display = 'block';
+        }
+    }
 
     window.addEventListener('keydown', (e) => {
-        if (editMode && e.key === 'Control') {
+        if (editMode && e.key === 'Control' && !isCameraOverrideActive) {
             isCameraOverrideActive = true;
-            controls.enabled = true; // Make sure camera controls are active
+            controls.enabled = true;
+            updateCameraModeIndicator(e);
+        } else if (editMode && e.key === 'Shift' && isCameraOverrideActive) {
+            updateCameraModeIndicator(e);
         }
     });
+
     window.addEventListener('keyup', (e) => {
         if (e.key === 'Control') {
             isCameraOverrideActive = false;
+            cameraModeIndicator.style.display = 'none';
+            controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE; // Restore default
+        } else if (e.key === 'Shift' && isCameraOverrideActive) {
+            updateCameraModeIndicator(e); // Re-evaluates to Pan mode
         }
     });
+
 
     // --- Helper & View Functions ---
     function onMapFileSelect(file) {
@@ -602,4 +643,3 @@
   </script>
 </body>
 </html>
-
