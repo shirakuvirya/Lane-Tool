@@ -1,88 +1,185 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <title>High-Performance Waypoint Editor</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
-    }
-  }
-  </script>
-  <style>
-    html, body { height:100%; margin:0; background:#0b0e14; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
-    #app { position:fixed; inset:0; cursor: default; }
-    #app.draggable { cursor: grab; }
-    #app.delete-mode { cursor: crosshair; }
-    #ui {
-      position: fixed; top: 12px; left: 12px; z-index: 10;
-      display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
-      background: rgba(20,24,33,0.7); border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 10px; padding: 8px 10px; color:#eaeefb; backdrop-filter: blur(6px);
-    }
-    button, label, select {
-      background:#2a2f3a; color:#fff; border:1px solid #3a4150; border-radius:8px;
-      padding:8px 12px; cursor:pointer; font-size:14px;
-    }
-    select {
-        -webkit-appearance: none; -moz-appearance: none; appearance: none;
+  <head>
+    <meta charset="utf-8" />
+    <title>High-Performance Waypoint Editor</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+      }
+    </script>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: #0b0e14;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      }
+      #app {
+        position: fixed;
+        inset: 0;
+        cursor: default;
+      }
+      #app.draggable {
+        cursor: grab;
+      }
+      #app.delete-mode {
+        cursor: crosshair;
+      }
+      #ui {
+        position: fixed;
+        top: 12px;
+        left: 12px;
+        z-index: 10;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        background: rgba(20, 24, 33, 0.7);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 10px;
+        padding: 8px 10px;
+        color: #eaeefb;
+        backdrop-filter: blur(6px);
+      }
+      button,
+      label,
+      select {
+        background: #2a2f3a;
+        color: #fff;
+        border: 1px solid #3a4150;
+        border-radius: 8px;
+        padding: 8px 12px;
+        cursor: pointer;
+        font-size: 14px;
+      }
+      select {
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        appearance: none;
         background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23FFFFFF%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
         background-repeat: no-repeat;
         background-position: right 12px top 50%;
-        background-size: .65em auto;
+        background-size: 0.65em auto;
         padding-right: 30px;
-    }
-    button:hover, label:hover, select:hover { background:#343b49; }
-    button:disabled { background: #222; color: #555; border-color: #333; cursor: not-allowed; }
-    .hint-bar {
-      position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%);
-      color:#9fb0d0; font-size: 13px; opacity: 0.9; user-select:none;
-      background: rgba(20,24,33,0.6); padding: 6px 10px; border-radius: 8px;
-      border: 1px solid rgba(255,255,255,0.08); text-align: center;
-    }
-    input[type="file"] { display:none; }
-    #loader {
-        position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-        color: #fff; background: rgba(0,0,0,0.7); padding: 20px; border-radius: 10px;
-        z-index: 100; display: none;
-    }
-    #info-panel {
-        position: fixed; top: 12px; right: -300px; width: 260px;
-        background: rgba(20,24,33,0.8); border: 1px solid rgba(255,255,255,0.08);
-        border-radius: 10px; padding: 15px; color: #eaeefb;
-        backdrop-filter: blur(8px); transition: right 0.3s ease-in-out; z-index: 10;
-    }
-    #info-panel.visible { right: 12px; }
-    #info-panel h3 {
-        margin-top: 0; margin-bottom: 15px; color: #fff; font-weight: 500;
-        border-bottom: 1px solid #3a4150; padding-bottom: 10px;
-    }
-    .info-grid {
-        display: grid; grid-template-columns: 50px 1fr; gap: 8px; font-size: 14px;
-    }
-    .info-grid label {
-        font-weight: 500; color: #9fb0d0; background: none; border: none; padding: 0;
-    }
-    .info-grid span {
-        font-family: monospace; background: #0b0e14; padding: 4px 8px;
-        border-radius: 4px; color: #c8d3f5;
-    }
-    #edit-toolbar {
+      }
+      button:hover,
+      label:hover,
+      select:hover {
+        background: #343b49;
+      }
+      button:disabled {
+        background: #222;
+        color: #555;
+        border-color: #333;
+        cursor: not-allowed;
+      }
+      .hint-bar {
+        position: fixed;
+        bottom: 10px;
+        left: 50%;
+        transform: translateX(-50%);
+        color: #9fb0d0;
+        font-size: 13px;
+        opacity: 0.9;
+        user-select: none;
+        background: rgba(20, 24, 33, 0.6);
+        padding: 6px 10px;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        text-align: center;
+      }
+      input[type="file"] {
+        display: none;
+      }
+      #loader {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        color: #fff;
+        background: rgba(0, 0, 0, 0.7);
+        padding: 20px;
+        border-radius: 10px;
+        z-index: 100;
+        display: none;
+      }
+      .side-panel {
+        position: fixed;
+        top: 70px;
+        width: 260px;
+        background: rgba(20, 24, 33, 0.8);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 10px;
+        padding: 15px;
+        color: #eaeefb;
+        backdrop-filter: blur(8px);
+        transition: transform 0.3s ease-in-out;
+        z-index: 9;
+      }
+      #info-panel {
+        right: 12px;
+        transform: translateX(calc(100% + 24px));
+      }
+      #info-panel.visible {
+        transform: translateX(0);
+      }
+      #display-panel {
+        left: 12px;
+        transform: translateX(calc(-100% - 24px));
+      }
+      #display-panel.visible {
+        transform: translateX(0);
+      }
+      .side-panel h3 {
+        margin-top: 0;
+        margin-bottom: 15px;
+        color: #fff;
+        font-weight: 500;
+        border-bottom: 1px solid #3a4150;
+        padding-bottom: 10px;
+      }
+      .control-grid {
+        display: grid;
+        grid-template-columns: 80px 1fr;
+        gap: 12px;
+        font-size: 14px;
+        align-items: center;
+      }
+      .control-grid label {
+        font-weight: 500;
+        color: #9fb0d0;
+        background: none;
+        border: none;
+        padding: 0;
+      }
+      .control-grid span,
+      .control-grid input,
+      .control-grid select {
+        font-family: monospace;
+        background: #0b0e14;
+        padding: 4px 8px;
+        border-radius: 4px;
+        color: #c8d3f5;
+        border: 1px solid #3a4150;
+      }
+      #edit-toolbar {
         display: none; /* Hidden by default */
         gap: 8px;
-    }
-    #edit-toolbar button.active {
+      }
+      #edit-toolbar button.active {
         background-color: #5476ff;
         border-color: #839eff;
-    }
-    /**/
-    #camera-mode-indicator {
+      }
+      #camera-mode-indicator {
         position: fixed;
-        bottom: 45px; /* Position above hint bar */
+        bottom: 45px;
         left: 50%;
         transform: translateX(-50%);
         background: rgba(84, 118, 255, 0.8);
@@ -92,64 +189,99 @@
         font-size: 14px;
         font-weight: 500;
         z-index: 20;
-        display: none; /* Hidden by default */
+        display: none;
         backdrop-filter: blur(6px);
-    }
-  </style>
-</head>
-<body>
-  <div id="app"></div>
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
 
-  <div id="ui">
-    <label for="map-file">Open Map (.ply/.pcd)</label>
-    <input id="map-file" type="file" accept=".ply,.pcd" />
-    <span style="border-left: 1px solid #444; margin: 0 4px;"></span>
-    <label for="waypoint-file">Open Waypoints (.db)</label>
-    <input id="waypoint-file" type="file" accept=".db,.sqlite" />
-    <button id="new-waypoints">New Waypoint Set</button>
-    <button id="save-waypoints" disabled>Save Waypoints (.db)</button>
-    <span style="border-left: 1px solid #444; margin: 0 4px;"></span>
-    <button id="edit" disabled>Toggle Edit Mode</button>
-    <div id="edit-toolbar">
+    <div id="ui">
+      <label for="map-file">Open Map (.ply/.pcd)</label>
+      <input id="map-file" type="file" accept=".ply,.pcd" />
+      <button id="display-toggle">Display Tools</button>
+      <span style="border-left: 1px solid #444; margin: 0 4px"></span>
+      <label for="waypoint-file">Open Waypoints (.db)</label>
+      <input id="waypoint-file" type="file" accept=".db,.sqlite" />
+      <button id="new-waypoints">New Waypoint Set</button>
+      <button id="save-waypoints" disabled>Save Waypoints (.db)</button>
+      <span style="border-left: 1px solid #444; margin: 0 4px"></span>
+      <button id="edit" disabled>Toggle Edit Mode</button>
+      <div id="edit-toolbar">
         <button id="edit-add">Add</button>
-        <button id="edit-move" class="active">Move</button>
+        <button id="edit-select">Select</button>
+        <button id="edit-move">Move</button>
         <button id="edit-delete">Delete</button>
+      </div>
+      <select id="view-select">
+        <option value="perspective">Perspective View</option>
+        <option value="top">Top-Down View</option>
+        <option value="front">Front View</option>
+        <option value="side">Side View</option>
+      </select>
+      <button id="lock-rotation">Lock Rotation</button>
     </div>
-    <select id="view-select">
-      <option value="perspective">Perspective View</option>
-      <option value="top">Top-Down View</option>
-      <option value="front">Front View</option>
-      <option value="side">Side View</option>
-    </select>
-    <button id="lock-rotation">Lock Rotation</button>
-  </div>
-  
-  <div id="loader">Loading Waypoints...</div>
 
-  <div id="info-panel">
-    <h3>Selected Waypoint</h3>
-    <div class="info-grid">
-      <label>X:</label> <span id="info-x">0.00</span>
-      <label>Y:</label> <span id="info-y">0.00</span>
-      <label>Z:</label> <span id="info-z">0.00</span>
+    <div id="loader">Loading...</div>
+
+    <div id="info-panel" class="side-panel">
+      <h3>Selected Waypoint</h3>
+      <div class="control-grid">
+        <label>X:</label> <span id="info-x">0.00</span> <label>Y:</label>
+        <span id="info-y">0.00</span> <label>Z:</label>
+        <span id="info-z">0.00</span>
+      </div>
+      <h3 style="margin-top: 15px">Orientation</h3>
+      <div class="control-grid">
+        <label>Roll:</label> <span id="info-roll">0.00</span>
+        <label>Pitch:</label> <span id="info-pitch">0.00</span>
+        <label>Yaw:</label> <span id="info-yaw">0.00</span>
+      </div>
     </div>
-    <h3 style="margin-top: 15px;">Orientation</h3>
-    <div class="info-grid">
-      <label>Roll:</label> <span id="info-roll">0.00</span>
-      <label>Pitch:</label> <span id="info-pitch">0.00</span>
-      <label>Yaw:</label> <span id="info-yaw">0.00</span>
+
+    <div id="display-panel" class="side-panel">
+      <h3>Display Tools</h3>
+      <div class="control-grid">
+        <label>Point Size</label>
+        <input
+          type="range"
+          id="point-size"
+          min="0.1"
+          max="10"
+          step="0.1"
+          value="1"
+        />
+        <label>Color</label>
+        <select id="color-mode">
+          <option value="default">Default</option>
+          <option value="height">Height (Z)</option>
+          <option value="range">Range from Origin</option>
+        </select>
+        <label>Voxel Size</label>
+        <input
+          type="range"
+          id="voxel-size"
+          min="0"
+          max="0.5"
+          step="0.01"
+          value="0"
+        />
+      </div>
     </div>
-  </div>
 
-  <div id="hint" class="hint-bar">
-    Orbit: Left-drag • Pan: Right-drag • Zoom: Wheel
-  </div>
-  <div id="hint-edit" class="hint-bar" style="display:none;">
-    <b>Edit Mode:</b> Select a mode (Add, Move, Delete). <b>Hold Ctrl for camera controls.</b>
-  </div>
-  <div id="camera-mode-indicator"></div>
+    <div id="hint" class="hint-bar">
+      Orbit: Left-drag • Pan: Right-drag • Zoom: Wheel
+    </div>
+    <div id="hint-edit" class="hint-bar" style="display: none">
+      <span id="edit-mode-hint"
+        >Click a start and end point to select a path.</span
+      >
+      <b>Hold Ctrl for camera.</b>
+    </div>
+    <div id="camera-mode-indicator"></div>
 
-  <script type="module">
+    <script type="module">
     import * as THREE from 'three';
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
     import { PLYLoader }  from 'three/addons/loaders/PLYLoader.js';
@@ -179,14 +311,17 @@
     // --- App State ---
     let mapObject = null;
     let waypointsObject = null;
+    let originalMapGeometry = null;
     let editMode = false;
     let editSubMode = 'move';
     let selectedPointIndex = null;
+    let selectedIndices = new Set();
     let isDragging = false;
     let isRotationLocked = false; 
     let isCameraOverrideActive = false;
     let indexToDbId = [];
     let dynamicPointSize = 0.05;
+    let pathSelectionStartIndex = null;
     
     const raycaster = new THREE.Raycaster();
     raycaster.params.Points.threshold = 0.05;
@@ -194,6 +329,7 @@
     const raycastPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
     const infoPanel = document.getElementById('info-panel');
     const hintMain = document.getElementById('hint');
+    const displayPanel = document.getElementById('display-panel');
     const editToolbar = document.getElementById('edit-toolbar');
     const cameraModeIndicator = document.getElementById('camera-mode-indicator');
 
@@ -325,6 +461,10 @@
         await refreshWaypointsFromDB();
         selectPoint(null);
     }
+    async function deleteSelectedPoints() { if (!db || selectedIndices.size === 0) return; const idsToDelete = Array.from(selectedIndices).map(index => indexToDbId[index]); if (idsToDelete.length === 0) return; const placeholders = idsToDelete.map(() => '?').join(','); db.run(`DELETE FROM waypoints WHERE id IN (${placeholders})`, idsToDelete); await refreshWaypointsFromDB(); }
+    function clearSelection() { selectedIndices.clear(); pathSelectionStartIndex = null; updateAllColors(); updateInfoPanel(); }
+    function updateAllColors() { if (!waypointsObject) return; const positions = waypointsObject.geometry.attributes.position; const colors = new Float32Array(positions.count * 3); const selectedColor = new THREE.Color(0xff8800); const defaultColor = new THREE.Color(0xffff00); const startColor = new THREE.Color(0x00ff00); for (let i = 0; i < positions.count; i++) { let color = defaultColor; if (i === pathSelectionStartIndex) { color = startColor; } else if (selectedIndices.has(i)) { color = selectedColor; } colors[i * 3] = color.r; colors[i * 3 + 1] = color.g; colors[i * 3 + 2] = color.b; } waypointsObject.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3)); }
+
 
     function selectPoint(index) {
         if (!waypointsObject || !waypointsObject.geometry.attributes.color) {
@@ -345,47 +485,132 @@
         colors.needsUpdate = true;
     }
 
-    function updateInfoPanel(index) {
-        if (index === null || !db) {
-            infoPanel.classList.remove('visible');
-            return;
-        }
-        const db_id = indexToDbId[index];
-        const stmt = db.prepare("SELECT x, y, z, roll, pitch, yaw FROM waypoints WHERE id = :id");
-        const result = stmt.getAsObject({':id': db_id});
-        stmt.free();
+    function updateInfoPanel() { if (selectedIndices.size === 1) { const index = selectedIndices.values().next().value; const db_id = indexToDbId[index]; const stmt = db.prepare("SELECT x, y, z, roll, pitch, yaw FROM waypoints WHERE id = :id"); const result = stmt.getAsObject({':id': db_id}); stmt.free(); if (result.x !== undefined) { infoPanel.querySelector('h3').textContent = `Waypoint #${db_id}`; document.getElementById('info-x').textContent = result.x.toFixed(4); document.getElementById('info-y').textContent = result.y.toFixed(4); document.getElementById('info-z').textContent = result.z.toFixed(4); document.getElementById('info-roll').textContent = result.roll.toFixed(4); document.getElementById('info-pitch').textContent = result.pitch.toFixed(4); document.getElementById('info-yaw').textContent = result.yaw.toFixed(4); infoPanel.classList.add('visible'); } } else if (selectedIndices.size > 1) { infoPanel.querySelector('h3').textContent = `${selectedIndices.size} Waypoints Selected`; document.getElementById('info-x').textContent = '---'; document.getElementById('info-y').textContent = '---'; document.getElementById('info-z').textContent = '---'; document.getElementById('info-roll').textContent = '---'; document.getElementById('info-pitch').textContent = '---'; document.getElementById('info-yaw').textContent = '---'; infoPanel.classList.add('visible'); } else { infoPanel.classList.remove('visible'); } }
 
-        if (result.x !== undefined) {
-            document.getElementById('info-x').textContent = result.x.toFixed(4);
-            document.getElementById('info-y').textContent = result.y.toFixed(4);
-            document.getElementById('info-z').textContent = result.z.toFixed(4);
-            document.getElementById('info-roll').textContent = result.roll.toFixed(4);
-            document.getElementById('info-pitch').textContent = result.pitch.toFixed(4);
-            document.getElementById('info-yaw').textContent = result.yaw.toFixed(4);
-            infoPanel.classList.add('visible');
-        } else {
-            infoPanel.classList.remove('visible');
-        }
+
+    // --- Map Display Options
+    function applyMapDisplayOptions() {
+        if (!originalMapGeometry) return;
+
+        document.getElementById('loader').textContent = 'Processing Map...';
+        document.getElementById('loader').style.display = 'block';
+
+        setTimeout(() => {
+            try {
+                const voxelSize = parseFloat(document.getElementById('voxel-size').value);
+                let processedGeometry = voxelSize > 0 ? downsample(originalMapGeometry, voxelSize) : originalMapGeometry.clone();
+                
+                const colorMode = document.getElementById('color-mode').value;
+                colorize(processedGeometry, colorMode);
+                
+                if (mapObject) {
+                    scene.remove(mapObject);
+                    mapObject.geometry.dispose();
+                }
+                
+                mapObject.geometry = processedGeometry;
+                scene.add(mapObject);
+            } catch (error) {
+                console.error("Error processing map display options:", error);
+                alert("An error occurred while processing the map.");
+            } finally {
+                document.getElementById('loader').style.display = 'none';
+            }
+        }, 50);
     }
 
+    function downsample(geometry, voxelSize) {
+        const newPositions = [];
+        const newColors = [];
+        const grid = new Set();
+        const positions = geometry.attributes.position.array;
+        const hasOriginalColors = geometry.attributes.color;
+        const colors = hasOriginalColors ? geometry.attributes.color.array : null;
+
+        for (let i = 0; i < positions.length; i += 3) {
+            const key = `${Math.floor(positions[i] / voxelSize)}|${Math.floor(positions[i+1] / voxelSize)}|${Math.floor(positions[i+2] / voxelSize)}`;
+            if (!grid.has(key)) {
+                grid.add(key);
+                newPositions.push(positions[i], positions[i+1], positions[i+2]);
+                if (colors) {
+                    newColors.push(colors[i], colors[i+1], colors[i+2]);
+                }
+            }
+        }
+        
+        const newGeom = new THREE.BufferGeometry();
+        newGeom.setAttribute('position', new THREE.Float32BufferAttribute(newPositions, 3));
+        if (colors && newColors.length > 0) {
+            newGeom.setAttribute('color', new THREE.Float32BufferAttribute(newColors, 3));
+        }
+        return newGeom;
+    }
+
+    function colorize(geometry, mode) {
+        if (mode === 'default') {
+            if (originalMapGeometry && originalMapGeometry.attributes.color) {
+                geometry.setAttribute('color', originalMapGeometry.attributes.color.clone());
+            } else {
+                geometry.deleteAttribute('color');
+            }
+            mapObject.material.vertexColors = originalMapGeometry.attributes.color !== undefined;
+            mapObject.material.needsUpdate = true;
+            return;
+        }
+
+        const positions = geometry.attributes.position.array;
+        const colors = new Float32Array(positions.length);
+        const color = new THREE.Color();
+        geometry.computeBoundingBox();
+        const box = geometry.boundingBox;
+        
+        let minVal, maxVal;
+
+        if (mode === 'height') {
+            minVal = box.min.z;
+            maxVal = box.max.z;
+        } else if (mode === 'range') {
+            minVal = Infinity; maxVal = -Infinity;
+            for (let i = 0; i < positions.length; i += 3) {
+                const dist = Math.sqrt(positions[i]**2 + positions[i+1]**2 + positions[i+2]**2);
+                minVal = Math.min(minVal, dist);
+                maxVal = Math.max(maxVal, dist);
+            }
+        }
+
+        const range = maxVal - minVal;
+        if (range <= 0) return;
+
+        for (let i = 0; i < positions.length; i += 3) {
+            let val;
+            if (mode === 'height') {
+                val = positions[i + 2];
+            } else {
+                val = Math.sqrt(positions[i]**2 + positions[i+1]**2 + positions[i+2]**2);
+            }
+            const normalized = (val - minVal) / range;
+            color.setHSL(0.7 * (1 - normalized), 1.0, 0.5);
+            colors[i] = color.r;
+            colors[i + 1] = color.g;
+            colors[i + 2] = color.b;
+        }
+        
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        mapObject.material.vertexColors = true;
+        mapObject.material.needsUpdate = true;
+    }
+    
     // --- Event Listeners ---
     function onPointerDown(event) {
         if (!editMode || !waypointsObject || isCameraOverrideActive) return;
-        
         const rect = renderer.domElement.getBoundingClientRect();
         pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
         raycaster.setFromCamera(pointer, camera);
-
         const intersects = raycaster.intersectObject(waypointsObject);
-        
         switch (editSubMode) {
-            case 'add':
-                const intersection = new THREE.Vector3();
-                if (raycaster.ray.intersectPlane(raycastPlane, intersection)) {
-                    addPoint(intersection);
-                }
-                break;
+            case 'add': const intersectionAdd = new THREE.Vector3(); if (raycaster.ray.intersectPlane(raycastPlane, intersectionAdd)) addPoint(intersectionAdd); break;
+            case 'select': if (intersects.length > 0) { const clickedIndex = intersects[0].index; if (pathSelectionStartIndex === null) { clearSelection(); pathSelectionStartIndex = clickedIndex; selectedIndices.add(clickedIndex); } else { const start = Math.min(pathSelectionStartIndex, clickedIndex); const end = Math.max(pathSelectionStartIndex, clickedIndex); for (let i = start; i <= end; i++) { selectedIndices.add(i); } pathSelectionStartIndex = null; } updateAllColors(); updateInfoPanel(); } else { clearSelection(); } break;
             case 'move':
                 if (intersects.length > 0) {
                     const index = intersects[0].index;
@@ -397,11 +622,7 @@
                     selectPoint(null);
                 }
                 break;
-            case 'delete':
-                if (intersects.length > 0) {
-                    deletePointByIndex(intersects[0].index);
-                }
-                break;
+            case 'delete': if (intersects.length > 0) { const clickedIndex = intersects[0].index; if (!selectedIndices.has(clickedIndex)) { clearSelection(); selectedIndices.add(clickedIndex); } deleteSelectedPoints(); } break;
         }
     }
 
@@ -439,6 +660,12 @@
     }
 
     // --- UI Wiring ---
+
+    document.getElementById('display-toggle').addEventListener('click', () => displayPanel.classList.toggle('visible'));
+    document.getElementById('point-size').addEventListener('input', (e) => { if (mapObject) mapObject.material.size = parseFloat(e.target.value); });
+    document.getElementById('color-mode').addEventListener('change', applyMapDisplayOptions);
+    document.getElementById('voxel-size').addEventListener('change', applyMapDisplayOptions);
+
     const mapFileInput = document.getElementById('map-file');
     const waypointFileInput = document.getElementById('waypoint-file');
     const newWaypointsBtn = document.getElementById('new-waypoints');
@@ -447,6 +674,40 @@
     const viewSelect = document.getElementById('view-select');
     const lockRotationBtn = document.getElementById('lock-rotation');
     
+    function onMapFileSelect(file) {
+        const url = URL.createObjectURL(file);
+        const loader = file.name.toLowerCase().endsWith('.ply') ? new PLYLoader() : new PCDLoader();
+    
+        loader.load(url, geometryOrPoints => {
+            const finalObject = geometryOrPoints.isPoints 
+                ? geometryOrPoints 
+                : new THREE.Points(geometryOrPoints, new THREE.PointsMaterial({ size: 1.0, vertexColors: geometryOrPoints.attributes.color !== undefined }));
+    
+            originalMapGeometry = finalObject.geometry;
+            originalMapGeometry.computeBoundingBox();
+            
+            if (mapObject) {
+                scene.remove(mapObject);
+                mapObject.geometry.dispose();
+                mapObject.material.dispose();
+            }
+            
+            mapObject = finalObject;
+            scene.add(mapObject);
+            
+            document.getElementById('point-size').value = 1.0;
+            document.getElementById('color-mode').value = 'default';
+            document.getElementById('voxel-size').value = 0;
+            displayPanel.classList.remove('visible');
+            
+            setView(viewSelect.value);
+            URL.revokeObjectURL(url);
+        }, undefined, (error) => {
+            console.error("Error loading map file:", error);
+            alert("Failed to load map file. Please check the console for details.");
+        });
+    }
+
     function updateButtonState() {
         const hasDb = db !== null;
         saveWaypointsBtn.disabled = !hasDb;
@@ -484,19 +745,22 @@
         lockRotationBtn.style.background = isRotationLocked ? '#5476ff' : '#2a2f3a';
     });
 
-    const editModeButtons = {
-        add: document.getElementById('edit-add'),
-        move: document.getElementById('edit-move'),
-        delete: document.getElementById('edit-delete'),
-    };
-    Object.entries(editModeButtons).forEach(([mode, button]) => {
-        button.addEventListener('click', () => {
-            editSubMode = mode;
-            Object.values(editModeButtons).forEach(btn => btn.classList.remove('active'));
-            button.classList.add('active');
-            app.classList.toggle('delete-mode', mode === 'delete');
-        });
-    });
+    const editModeButtons = { add: document.getElementById('edit-add'), move: document.getElementById('edit-move'), delete: document.getElementById('edit-delete'), select: document.getElementById('edit-select'), };
+
+    // Object.entries(editModeButtons).forEach(([mode, button]) => {
+    //     button.addEventListener('click', () => {
+    //         editSubMode = mode;
+    //         Object.values(editModeButtons).forEach(btn => btn.classList.remove('active'));
+    //         button.classList.add('active');
+    //         app.classList.toggle('delete-mode', mode === 'delete');
+    //     });
+    // });
+
+    Object.entries(editModeButtons).forEach(([mode, button]) => { button.addEventListener('click', () => { if (mode !== 'select') { pathSelectionStartIndex = null; updateAllColors(); } editSubMode = mode; Object.values(editModeButtons).forEach(btn => btn.classList.remove('active')); button.classList.add('active'); app.classList.toggle('delete-mode', mode === 'delete'); switch(mode) { case 'add': hintSpan.textContent = "Click on the grid to add a waypoint."; break; case 'move': hintSpan.textContent = "Click and drag selected points to move them."; break; case 'delete': hintSpan.textContent = "Click a waypoint or selection to delete."; break; case 'select': hintSpan.textContent = "Click a start and end point to select a path."; break; } }); });
+
+
+    const hintSpan = document.getElementById('edit-mode-hint');
+
     
     renderer.domElement.addEventListener('pointerdown', onPointerDown);
     renderer.domElement.addEventListener('pointermove', onPointerMove);
@@ -511,11 +775,11 @@
         // --- FIX: Swapped Ctrl and Ctrl+Shift logic ---
         if (e.ctrlKey && e.shiftKey) {
             controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE; // Orbit
-            cameraModeIndicator.textContent = "Camera Mode: Orbit";
+            cameraModeIndicator.textContent = "Camera Mode: Pan";
             cameraModeIndicator.style.display = 'block';
         } else if (e.ctrlKey) {
             controls.mouseButtons.LEFT = THREE.MOUSE.PAN; // Pan
-            cameraModeIndicator.textContent = "Camera Mode: Pan";
+            cameraModeIndicator.textContent = "Camera Mode: Orbit";
             cameraModeIndicator.style.display = 'block';
         }
     }
@@ -542,17 +806,17 @@
 
 
     // --- Helper & View Functions ---
-    function onMapFileSelect(file) {
-        const url = URL.createObjectURL(file);
-        const loader = file.name.toLowerCase().endsWith('.ply') ? new PLYLoader() : new PCDLoader();
-        loader.load(url, geometryOrPoints => {
-            if (mapObject) scene.remove(mapObject);
-            mapObject = geometryOrPoints.isPoints ? geometryOrPoints : new THREE.Points(geometryOrPoints, new THREE.PointsMaterial({ size: 0.01, vertexColors: true}));
-            scene.add(mapObject);
-            setView(viewSelect.value);
-            URL.revokeObjectURL(url);
-        });
-    }
+    // function onMapFileSelect(file) {
+    //     const url = URL.createObjectURL(file);
+    //     const loader = file.name.toLowerCase().endsWith('.ply') ? new PLYLoader() : new PCDLoader();
+    //     loader.load(url, geometryOrPoints => {
+    //         if (mapObject) scene.remove(mapObject);
+    //         mapObject = geometryOrPoints.isPoints ? geometryOrPoints : new THREE.Points(geometryOrPoints, new THREE.PointsMaterial({ size: 0.01, vertexColors: true}));
+    //         scene.add(mapObject);
+    //         setView(viewSelect.value);
+    //         URL.revokeObjectURL(url);
+    //     });
+    // }
 
     function setView(viewType) {
         if (controls) { controls.dispose(); }
