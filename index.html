@@ -132,7 +132,6 @@
         <button id="edit-select" class="active">Select</button>
         <button id="edit-move">Move</button>
         <button id="edit-delete">Delete</button>
-        <!-- NEW: Undo/Redo buttons -->
         <span style="border-left: 1px solid #444; margin: 0 4px;"></span>
         <button id="edit-undo" disabled>Undo</button>
         <button id="edit-redo" disabled>Redo</button>
@@ -241,10 +240,11 @@
     let indexToDbId = [];
     let dynamicPointSize = 0.05;
     let pathSelectionStartIndex = null;
-    let ghostWaypointsObject = null; // NEW
-    let undoStack = []; // NEW
-    let redoStack = []; // NEW
-    const MAX_HISTORY = 50; // NEW
+    let transientGhostObject = null;
+    let persistentGhostObject = null;
+    let undoStack = [];
+    let redoStack = [];
+    const MAX_HISTORY = 50;
     
     const raycaster = new THREE.Raycaster();
     raycaster.params.Points.threshold = 0.05;
@@ -270,7 +270,7 @@
         SQL = await initSqlJs({ locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/${file}` });
     }
 
-    // --- NEW: Undo/Redo and State Management ---
+    // --- Undo/Redo and State Management ---
     const undoBtn = document.getElementById('edit-undo');
     const redoBtn = document.getElementById('edit-redo');
 
@@ -281,11 +281,12 @@
 
     function recordState() {
         if (!db) return;
-        redoStack = []; // Clear redo stack on a new action
+        clearPersistentGhostPreview();
+        redoStack = [];
         const dbState = db.export();
         undoStack.push(dbState);
         if (undoStack.length > MAX_HISTORY) {
-            undoStack.shift(); // Keep stack size manageable
+            undoStack.shift();
         }
         updateUndoRedoButtons();
     }
@@ -300,7 +301,7 @@
         db = new SQL.Database(new Uint8Array(prevState));
         
         await refreshWaypointsFromDB();
-        clearGhostPreview(); // Clear any lingering previews
+        clearAllGhostPreviews();
         updateUndoRedoButtons();
     }
 
@@ -313,14 +314,13 @@
         db = new SQL.Database(new Uint8Array(nextState));
 
         await refreshWaypointsFromDB();
-        clearGhostPreview(); // Clear any lingering previews
+        clearAllGhostPreviews();
         updateUndoRedoButtons();
     }
 
-    // --- NEW: Ghost Preview for Edits ---
-    function createGhostPreview() {
-        clearGhostPreview(); // Clear any existing one first
-
+    // --- Ghost Preview System ---
+    function createTransientGhostPreview() {
+        clearTransientGhostPreview();
         const indices = Array.from(selectedIndices);
         if (indices.length === 0 || !waypointsObject) return;
 
@@ -339,18 +339,73 @@
             transparent: true,
             opacity: 0.4
         });
-        ghostWaypointsObject = new THREE.Points(geometry, material);
-        scene.add(ghostWaypointsObject);
+        transientGhostObject = new THREE.Points(geometry, material);
+        scene.add(transientGhostObject);
     }
 
-    function clearGhostPreview() {
-        if (ghostWaypointsObject) {
-            scene.remove(ghostWaypointsObject);
-            ghostWaypointsObject.geometry.dispose();
-            ghostWaypointsObject.material.dispose();
-            ghostWaypointsObject = null;
+    function clearTransientGhostPreview() {
+        if (transientGhostObject) {
+            scene.remove(transientGhostObject);
+            transientGhostObject.geometry.dispose();
+            transientGhostObject.material.dispose();
+            transientGhostObject = null;
         }
     }
+    
+    async function createPersistentGhostPreview() {
+        clearPersistentGhostPreview();
+        const indices = Array.from(selectedIndices);
+        if (indices.length === 0 || undoStack.length === 0) return;
+
+        const prevState = undoStack[undoStack.length - 1];
+        const tempDb = new SQL.Database(new Uint8Array(prevState));
+        const stmt = tempDb.prepare("SELECT x, y, z FROM waypoints ORDER BY id;");
+        
+        const allOldPositions = [];
+        while (stmt.step()) {
+            const row = stmt.get();
+            allOldPositions.push(row[0] - mapOffset.x, row[1] - mapOffset.y, row[2] - mapOffset.z);
+        }
+        stmt.free();
+        tempDb.close();
+
+        const ghostPositions = [];
+        for (const index of indices) {
+            if (index * 3 < allOldPositions.length) {
+                ghostPositions.push(allOldPositions[index * 3], allOldPositions[index * 3 + 1], allOldPositions[index * 3 + 2]);
+            }
+        }
+        
+        if (ghostPositions.length === 0) return;
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(ghostPositions, 3));
+        // NEW: Brighter color and higher opacity for better visibility
+        const material = new THREE.PointsMaterial({
+            size: camera.isPerspectiveCamera ? dynamicPointSize * 0.8 : 2.0,
+            sizeAttenuation: camera.isPerspectiveCamera,
+            color: 0x3377ff, 
+            transparent: true,
+            opacity: 0.7
+        });
+        persistentGhostObject = new THREE.Points(geometry, material);
+        scene.add(persistentGhostObject);
+    }
+    
+    function clearPersistentGhostPreview() {
+        if (persistentGhostObject) {
+            scene.remove(persistentGhostObject);
+            persistentGhostObject.geometry.dispose();
+            persistentGhostObject.material.dispose();
+            persistentGhostObject = null;
+        }
+    }
+
+    function clearAllGhostPreviews() {
+        clearTransientGhostPreview();
+        clearPersistentGhostPreview();
+    }
+
 
     // --- Waypoint Loading and Management ---
     function clearVisualWaypoints() {
@@ -408,9 +463,9 @@
             const res = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='waypoints';");
             if (res.length === 0) throw new Error("Database does not contain a 'waypoints' table.");
             
-            undoStack = []; // NEW
-            redoStack = []; // NEW
-            recordState();   // NEW: Record initial state
+            undoStack = [];
+            redoStack = [];
+            recordState();
         } catch (err) {
             alert(`Error loading database: ${err.message}`);
             db = null;
@@ -429,9 +484,9 @@
         
         db = new SQL.Database();
         db.run(WAYPOINT_TABLE_SQL);
-        undoStack = []; // NEW
-        redoStack = []; // NEW
-        recordState();   // NEW: Record initial state
+        undoStack = [];
+        redoStack = [];
+        recordState();
         refreshWaypointsFromDB();
         updateButtonState();
     }
@@ -450,7 +505,7 @@
     // --- Point Manipulation ---
     async function addPoint(position) {
         if (!db) return;
-        recordState(); // NEW
+        recordState();
         const dbPosition = position.clone().add(mapOffset);
         db.run("INSERT INTO waypoints (x, y, z, roll, pitch, yaw) VALUES (?, ?, ?, 0, 0, 0)", [dbPosition.x, dbPosition.y, dbPosition.z]);
         await refreshWaypointsFromDB();
@@ -487,8 +542,9 @@
         const indices = Array.from(selectedIndices).sort((a, b) => a - b);
         if (indices.length < 3) return; 
         
-        recordState(); // NEW
-        createGhostPreview(); // NEW
+        // NEW: Corrected order of operations
+        recordState();
+        createPersistentGhostPreview();
 
         const positions = waypointsObject.geometry.attributes.position;
         const startIdx = indices[0];
@@ -508,7 +564,6 @@
 
         positions.needsUpdate = true;
         await batchUpdateDbPositions(intermediaryIndices);
-        setTimeout(clearGhostPreview, 1000); // NEW
     }
 
     async function performRadialInterpolation(saveToDb = false) {
@@ -533,7 +588,7 @@
             p3.clone().add(p3.clone().sub(new THREE.Vector3().fromBufferAttribute(positions, endIdx - 1)));
 
         const strength = parseFloat(document.getElementById('radial-strength').value);
-        const tension = 0.35; // A constant to control the 'pull' from adjacent points
+        const tension = 0.35;
 
         const tangentDir0 = p3.clone().sub(p_minus_1).normalize();
         const tangentDir1 = p_plus_1.clone().sub(p0).normalize();
@@ -581,7 +636,7 @@
 
     async function deletePointByIndex(index) {
         if (index === null) return;
-        recordState(); // NEW
+        recordState();
         const db_id = indexToDbId[index];
         db.run("DELETE FROM waypoints WHERE id = ?", [db_id]);
         await refreshWaypointsFromDB();
@@ -589,7 +644,7 @@
     }
     async function deleteSelectedPoints() { 
         if (!db || selectedIndices.size === 0) return; 
-        recordState(); // NEW
+        recordState();
         const idsToDelete = Array.from(selectedIndices).map(index => indexToDbId[index]); 
         if (idsToDelete.length === 0) return; 
         const placeholders = idsToDelete.map(() => '?').join(','); 
@@ -601,7 +656,7 @@
         pathSelectionStartIndex = null; 
         updateAllColors(); 
         updateInfoPanel();
-        clearGhostPreview(); // NEW
+        clearAllGhostPreviews();
     }
     function updateAllColors() { if (!waypointsObject) return; const positions = waypointsObject.geometry.attributes.position; const colors = new Float32Array(positions.count * 3); const selectedColor = new THREE.Color(0xff8800); const defaultColor = new THREE.Color(0xffff00); const startColor = new THREE.Color(0x00ff00); for (let i = 0; i < positions.count; i++) { let color = defaultColor; if (i === pathSelectionStartIndex) { color = startColor; } else if (selectedIndices.has(i)) { color = selectedColor; } colors[i * 3] = color.r; colors[i * 3 + 1] = color.g; colors[i * 3 + 2] = color.b; } waypointsObject.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3)); }
 
@@ -821,7 +876,7 @@
         if (isCameraOverrideActive) return;
 
         if (editMode && isDragging && selectedPointIndex !== null) {
-            recordState(); // NEW
+            recordState();
             const db_id = indexToDbId[selectedPointIndex];
             const posAttr = waypointsObject.geometry.attributes.position;
             const pos = new THREE.Vector3().fromBufferAttribute(posAttr, selectedPointIndex);
@@ -853,11 +908,12 @@
     document.getElementById('linear-interpolate').addEventListener('click', linearInterpolateSelected);
     const radialSlider = document.getElementById('radial-strength');
     radialSlider.addEventListener('input', () => performRadialInterpolation(false));
-    radialSlider.addEventListener('pointerdown', createGhostPreview);
+    radialSlider.addEventListener('pointerdown', createTransientGhostPreview);
     radialSlider.addEventListener('change', () => {
+        clearTransientGhostPreview();
         recordState();
+        createPersistentGhostPreview();
         performRadialInterpolation(true);
-        clearGhostPreview();
     });
     document.getElementById('edit-undo').addEventListener('click', undo);
     document.getElementById('edit-redo').addEventListener('click', redo);
