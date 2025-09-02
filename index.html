@@ -1,287 +1,202 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <title>High-Performance Waypoint Editor</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
-    <script type="importmap">
-      {
-        "imports": {
-          "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
-        }
-      }
-    </script>
-    <style>
-      html,
-      body {
-        height: 100%;
-        margin: 0;
-        background: #0b0e14;
-        font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-      }
-      #app {
-        position: fixed;
-        inset: 0;
-        cursor: default;
-      }
-      #app.draggable {
-        cursor: grab;
-      }
-      #app.delete-mode {
-        cursor: crosshair;
-      }
-      #ui {
-        position: fixed;
-        top: 12px;
-        left: 12px;
-        z-index: 10;
-        display: flex;
-        gap: 8px;
-        align-items: center;
-        flex-wrap: wrap;
-        background: rgba(20, 24, 33, 0.7);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 10px;
-        padding: 8px 10px;
-        color: #eaeefb;
-        backdrop-filter: blur(6px);
-      }
-      button,
-      label,
-      select {
-        background: #2a2f3a;
-        color: #fff;
-        border: 1px solid #3a4150;
-        border-radius: 8px;
-        padding: 8px 12px;
-        cursor: pointer;
-        font-size: 14px;
-      }
-      select {
-        -webkit-appearance: none;
-        -moz-appearance: none;
-        appearance: none;
+<head>
+  <meta charset="utf-8" />
+  <title>High-Performance Waypoint Editor</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+  <style>
+    html, body { height:100%; margin:0; background:#0b0e14; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+    #app { position:fixed; inset:0; cursor: default; }
+    #app.draggable { cursor: grab; }
+    #app.delete-mode { cursor: crosshair; }
+    #ui {
+      position: fixed; top: 12px; left: 12px; z-index: 10;
+      display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+      background: rgba(20,24,33,0.7); border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px; padding: 8px 10px; color:#eaeefb; backdrop-filter: blur(6px);
+    }
+    button, label, select {
+      background:#2a2f3a; color:#fff; border:1px solid #3a4150; border-radius:8px;
+      padding:8px 12px; cursor:pointer; font-size:14px;
+    }
+    select {
+        -webkit-appearance: none; -moz-appearance: none; appearance: none;
         background-image: url("data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%23FFFFFF%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.5-12.8z%22%2F%3E%3C%2Fsvg%3E");
         background-repeat: no-repeat;
         background-position: right 12px top 50%;
-        background-size: 0.65em auto;
+        background-size: .65em auto;
         padding-right: 30px;
-      }
-      button:hover,
-      label:hover,
-      select:hover {
-        background: #343b49;
-      }
-      button:disabled {
-        background: #222;
-        color: #555;
-        border-color: #333;
-        cursor: not-allowed;
-      }
-      .hint-bar {
-        position: fixed;
-        bottom: 10px;
-        left: 50%;
-        transform: translateX(-50%);
-        color: #9fb0d0;
-        font-size: 13px;
-        opacity: 0.9;
-        user-select: none;
-        background: rgba(20, 24, 33, 0.6);
-        padding: 6px 10px;
-        border-radius: 8px;
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        text-align: center;
-      }
-      input[type="file"] {
-        display: none;
-      }
-      #loader {
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        color: #fff;
-        background: rgba(0, 0, 0, 0.7);
-        padding: 20px;
-        border-radius: 10px;
-        z-index: 100;
-        display: none;
-      }
-      .side-panel {
-        position: fixed;
-        top: 70px;
-        width: 260px;
-        background: rgba(20, 24, 33, 0.8);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 10px;
-        padding: 15px;
-        color: #eaeefb;
-        backdrop-filter: blur(8px);
-        transition: transform 0.3s ease-in-out;
-        z-index: 9;
-      }
-      #info-panel {
+    }
+    button:hover, label:hover, select:hover { background:#343b49; }
+    button:disabled { background: #222; color: #555; border-color: #333; cursor: not-allowed; }
+    .hint-bar {
+      position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%);
+      color:#9fb0d0; font-size: 13px; opacity: 0.9; user-select:none;
+      background: rgba(20,24,33,0.6); padding: 6px 10px; border-radius: 8px;
+      border: 1px solid rgba(255,255,255,0.08); text-align: center;
+    }
+    input[type="file"] { display:none; }
+    #loader {
+        position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+        color: #fff; background: rgba(0,0,0,0.7); padding: 20px; border-radius: 10px;
+        z-index: 100; display: none;
+    }
+    .side-panel {
+        position: fixed; top: 70px; width: 260px;
+        background: rgba(20,24,33,0.8); border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 10px; padding: 15px; color: #eaeefb;
+        backdrop-filter: blur(8px); transition: transform 0.3s ease-in-out; z-index: 9;
+    }
+    #info-panel {
         right: 12px;
         transform: translateX(calc(100% + 24px));
-      }
-      #info-panel.visible {
+    }
+    #info-panel.visible {
         transform: translateX(0);
-      }
-      #display-panel {
+    }
+    #display-panel {
         left: 12px;
         transform: translateX(calc(-100% - 24px));
-      }
-      #display-panel.visible {
+    }
+    #display-panel.visible {
         transform: translateX(0);
-      }
-      .side-panel h3 {
-        margin-top: 0;
-        margin-bottom: 15px;
-        color: #fff;
-        font-weight: 500;
-        border-bottom: 1px solid #3a4150;
-        padding-bottom: 10px;
-      }
-      .control-grid {
-        display: grid;
-        grid-template-columns: 80px 1fr;
-        gap: 12px;
-        font-size: 14px;
-        align-items: center;
-      }
-      .control-grid label {
-        font-weight: 500;
-        color: #9fb0d0;
-        background: none;
-        border: none;
-        padding: 0;
-      }
-      .control-grid span,
-      .control-grid input,
-      .control-grid select {
-        font-family: monospace;
-        background: #0b0e14;
-        padding: 4px 8px;
-        border-radius: 4px;
-        color: #c8d3f5;
-        border: 1px solid #3a4150;
-      }
-      #edit-toolbar {
+    }
+    #path-tools-panel {
+        right: 12px;
+        top: 290px;
+        transform: translateX(calc(100% + 24px));
+    }
+    #path-tools-panel.visible {
+        transform: translateX(0);
+    }
+    .side-panel h3 {
+        margin-top: 0; margin-bottom: 15px; color: #fff; font-weight: 500;
+        border-bottom: 1px solid #3a4150; padding-bottom: 10px;
+    }
+    .control-grid {
+        display: grid; grid-template-columns: 80px 1fr; gap: 12px; font-size: 14px; align-items: center;
+    }
+    .control-grid label {
+        font-weight: 500; color: #9fb0d0; background: none; border: none; padding: 0;
+    }
+    .control-grid span, .control-grid input, .control-grid select {
+        font-family: monospace; background: #0b0e14; padding: 4px 8px;
+        border-radius: 4px; color: #c8d3f5; border: 1px solid #3a4150;
+    }
+    .control-grid button {
+        width: 100%;
+        justify-content: center;
+    }
+    #edit-toolbar {
         display: none; /* Hidden by default */
         gap: 8px;
-      }
-      #edit-toolbar button.active {
+    }
+    #edit-toolbar button.active {
         background-color: #5476ff;
         border-color: #839eff;
-      }
-      #camera-mode-indicator {
-        position: fixed;
-        bottom: 45px;
-        left: 50%;
+    }
+    #camera-mode-indicator {
+        position: fixed; bottom: 45px; left: 50%;
         transform: translateX(-50%);
-        background: rgba(84, 118, 255, 0.8);
-        color: #fff;
-        padding: 8px 14px;
-        border-radius: 8px;
-        font-size: 14px;
-        font-weight: 500;
-        z-index: 20;
-        display: none;
-        backdrop-filter: blur(6px);
-      }
-    </style>
-  </head>
-  <body>
-    <div id="app"></div>
+        background: rgba(84, 118, 255, 0.8); color: #fff;
+        padding: 8px 14px; border-radius: 8px; font-size: 14px;
+        font-weight: 500; z-index: 20; display: none; backdrop-filter: blur(6px);
+    }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
 
-    <div id="ui">
-      <label for="map-file">Open Map (.ply/.pcd)</label>
-      <input id="map-file" type="file" accept=".ply,.pcd" />
-      <button id="display-toggle">Display Tools</button>
-      <span style="border-left: 1px solid #444; margin: 0 4px"></span>
-      <label for="waypoint-file">Open Waypoints (.db)</label>
-      <input id="waypoint-file" type="file" accept=".db,.sqlite" />
-      <button id="new-waypoints">New Waypoint Set</button>
-      <button id="save-waypoints" disabled>Save Waypoints (.db)</button>
-      <span style="border-left: 1px solid #444; margin: 0 4px"></span>
-      <button id="edit" disabled>Toggle Edit Mode</button>
-      <div id="edit-toolbar">
+  <div id="ui">
+    <label for="map-file">Open Map (.ply/.pcd)</label>
+    <input id="map-file" type="file" accept=".ply,.pcd" />
+    <button id="display-toggle">Display Tools</button>
+    <span style="border-left: 1px solid #444; margin: 0 4px;"></span>
+    <label for="waypoint-file">Open Waypoints (.db)</label>
+    <input id="waypoint-file" type="file" accept=".db,.sqlite" />
+    <button id="new-waypoints">New Waypoint Set</button>
+    <button id="save-waypoints" disabled>Save Waypoints (.db)</button>
+    <span style="border-left: 1px solid #444; margin: 0 4px;"></span>
+    <button id="edit" disabled>Toggle Edit Mode</button>
+    <div id="edit-toolbar">
         <button id="edit-add">Add</button>
-        <button id="edit-select">Select</button>
+        <button id="edit-select" class="active">Select</button>
         <button id="edit-move">Move</button>
         <button id="edit-delete">Delete</button>
-      </div>
-      <select id="view-select">
-        <option value="perspective">Perspective View</option>
-        <option value="top">Top-Down View</option>
-        <option value="front">Front View</option>
-        <option value="side">Side View</option>
-      </select>
-      <button id="lock-rotation">Lock Rotation</button>
     </div>
+    <select id="view-select">
+      <option value="perspective">Perspective View</option>
+      <option value="top">Top-Down View</option>
+      <option value="front">Front View</option>
+      <option value="side">Side View</option>
+    </select>
+    <button id="lock-rotation">Lock Rotation</button>
+  </div>
+  
+  <div id="loader">Loading...</div>
 
-    <div id="loader">Loading...</div>
-
-    <div id="info-panel" class="side-panel">
-      <h3>Selected Waypoint</h3>
-      <div class="control-grid">
-        <label>X:</label> <span id="info-x">0.00</span> <label>Y:</label>
-        <span id="info-y">0.00</span> <label>Z:</label>
-        <span id="info-z">0.00</span>
-      </div>
-      <h3 style="margin-top: 15px">Orientation</h3>
-      <div class="control-grid">
-        <label>Roll:</label> <span id="info-roll">0.00</span>
-        <label>Pitch:</label> <span id="info-pitch">0.00</span>
-        <label>Yaw:</label> <span id="info-yaw">0.00</span>
-      </div>
+  <div id="info-panel" class="side-panel">
+    <h3>Selected Waypoint</h3>
+    <div class="control-grid">
+      <label>X:</label> <span id="info-x">0.00</span>
+      <label>Y:</label> <span id="info-y">0.00</span>
+      <label>Z:</label> <span id="info-z">0.00</span>
     </div>
+    <h3 style="margin-top: 15px;">Orientation</h3>
+    <div class="control-grid">
+      <label>Roll:</label> <span id="info-roll">0.00</span>
+      <label>Pitch:</label> <span id="info-pitch">0.00</span>
+      <label>Yaw:</label> <span id="info-yaw">0.00</span>
+    </div>
+  </div>
 
-    <div id="display-panel" class="side-panel">
+  <div id="display-panel" class="side-panel">
       <h3>Display Tools</h3>
       <div class="control-grid">
-        <label>Point Size</label>
-        <input
-          type="range"
-          id="point-size"
-          min="0.1"
-          max="10"
-          step="0.1"
-          value="1"
-        />
-        <label>Color</label>
-        <select id="color-mode">
-          <option value="default">Default</option>
-          <option value="height">Height (Z)</option>
-          <option value="range">Range from Origin</option>
-        </select>
-        <label>Voxel Size</label>
-        <input
-          type="range"
-          id="voxel-size"
-          min="0"
-          max="0.5"
-          step="0.01"
-          value="0"
-        />
+          <label>Point Size</label>
+          <input type="range" id="point-size" min="0.1" max="10" step="0.1" value="0.5">
+          <label>Color</label>
+          <select id="color-mode">
+              <option value="default">Default</option>
+              <option value="height">Height (Z)</option>
+              <option value="range">Range from Origin</option>
+          </select>
+          <label>Voxel Size</label>
+          <input type="range" id="voxel-size" min="0" max="0.5" step="0.01" value="0">
       </div>
-    </div>
+  </div>
 
-    <div id="hint" class="hint-bar">
-      Orbit: Left-drag • Pan: Right-drag • Zoom: Wheel
-    </div>
-    <div id="hint-edit" class="hint-bar" style="display: none">
-      <span id="edit-mode-hint"
-        >Click a start and end point to select a path.</span
-      >
-      <b>Hold Ctrl for camera.</b>
-    </div>
-    <div id="camera-mode-indicator"></div>
+  <!-- NEW: Updated Path Tools panel for better UX -->
+  <div id="path-tools-panel" class="side-panel">
+      <h3>Path Tools</h3>
+      <p style="font-size: 13px; color: #9fb0d0; margin-top: -10px; margin-bottom: 15px;">Requires a path selection (3+ points).</p>
+      <div class="control-grid">
+          <button id="linear-interpolate" style="grid-column: 1 / -1;">Linear Interpolate</button>
+          <label style="grid-column: 1 / -1; margin-top: 8px; margin-bottom: -8px; color: #fff; background: none; border: none; padding: 0;">Curve</label>
+          <small style="grid-column: 1 / -1; font-size: 11px; color: #9fb0d0; margin-bottom: 8px;">Changes are applied on slider release.</small>
+          <input type="range" id="radial-strength" min="-15" max="15" step="0.1" value="3" style="grid-column: 1 / -1;">
+      </div>
+  </div>
 
-    <script type="module">
+
+  <div id="hint" class="hint-bar">
+    Orbit: Left-drag • Pan: Right-drag • Zoom: Wheel
+  </div>
+  <div id="hint-edit" class="hint-bar" style="display:none;">
+    <span id="edit-mode-hint">Click a start and end point to select a path.</span> <b>Hold Ctrl for camera.</b>
+  </div>
+  <div id="camera-mode-indicator"></div>
+
+  <script type="module">
     import * as THREE from 'three';
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
     import { PLYLoader }  from 'three/addons/loaders/PLYLoader.js';
@@ -309,6 +224,7 @@
     scene.add(gridHelper);
 
     // --- App State ---
+    const mapOffset = new THREE.Vector3();
     let mapObject = null;
     let waypointsObject = null;
     let originalMapGeometry = null;
@@ -342,7 +258,7 @@
           x REAL NOT NULL, y REAL NOT NULL, z REAL NOT NULL,
           roll REAL DEFAULT 0, pitch REAL DEFAULT 0, yaw REAL DEFAULT 0
       );`;
-
+      
     async function initDatabase() {
         SQL = await initSqlJs({ locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/${file}` });
     }
@@ -363,30 +279,23 @@
         clearVisualWaypoints();
         if (!db) return;
 
-        const stmt = db.prepare("SELECT id, x, y, z FROM waypoints;");
+        const stmt = db.prepare("SELECT id, x, y, z FROM waypoints ORDER BY id;"); 
         const positions = [];
-        const colors = [];
-        const defaultColor = new THREE.Color(0xffff00);
+        indexToDbId = [];
 
         while (stmt.step()) {
             const row = stmt.get();
             indexToDbId.push(row[0]);
-            positions.push(row[1], row[2], row[3]);
-            colors.push(defaultColor.r, defaultColor.g, defaultColor.b);
+            positions.push(row[1] - mapOffset.x, row[2] - mapOffset.y, row[3] - mapOffset.z);
         }
         stmt.free();
 
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
         
-        const material = new THREE.PointsMaterial({
-            size: dynamicPointSize,
-            vertexColors: true,
-            sizeAttenuation: true
-        });
-
+        const material = new THREE.PointsMaterial({ size: dynamicPointSize, vertexColors: true });
         waypointsObject = new THREE.Points(geometry, material);
+        updateAllColors();
         scene.add(waypointsObject);
         
         if (waypointsObject && camera) {
@@ -445,14 +354,134 @@
     // --- Point Manipulation ---
     async function addPoint(position) {
         if (!db) return;
-        db.run("INSERT INTO waypoints (x, y, z) VALUES (?, ?, ?)", [position.x, position.y, position.z]);
+        const dbPosition = position.clone().add(mapOffset);
+        db.run("INSERT INTO waypoints (x, y, z, roll, pitch, yaw) VALUES (?, ?, ?, 0, 0, 0)", [dbPosition.x, dbPosition.y, dbPosition.z]);
         await refreshWaypointsFromDB();
     }
     
     function updatePointInDb(db_id, position) {
         if (!db) return;
-        db.run("UPDATE waypoints SET x = ?, y = ?, z = ? WHERE id = ?", [position.x, position.y, position.z, db_id]);
+        const dbPosition = position.clone().add(mapOffset);
+        db.run("UPDATE waypoints SET x = ?, y = ?, z = ? WHERE id = ?", [dbPosition.x, dbPosition.y, dbPosition.z, db_id]);
     }
+    
+    async function batchUpdateDbPositions(indicesToUpdate) {
+        if (!db || !waypointsObject) return;
+        const positions = waypointsObject.geometry.attributes.position;
+        
+        try {
+            db.run("BEGIN TRANSACTION");
+            for (const index of indicesToUpdate) {
+                if (index >= 0 && index < positions.count) {
+                    const db_id = indexToDbId[index];
+                    const visualPos = new THREE.Vector3().fromBufferAttribute(positions, index);
+                    updatePointInDb(db_id, visualPos);
+                }
+            }
+            db.run("COMMIT");
+        } catch (e) {
+            console.error("Batch DB update failed, rolling back.", e);
+            db.run("ROLLBACK");
+        }
+    }
+
+
+    async function linearInterpolateSelected() {
+        const indices = Array.from(selectedIndices).sort((a, b) => a - b);
+        if (indices.length < 3) return; 
+
+        const positions = waypointsObject.geometry.attributes.position;
+        const startIdx = indices[0];
+        const endIdx = indices[indices.length - 1];
+
+        const pStart = new THREE.Vector3().fromBufferAttribute(positions, startIdx);
+        const pEnd = new THREE.Vector3().fromBufferAttribute(positions, endIdx);
+
+        const intermediaryIndices = [];
+        for (let i = 1; i < indices.length - 1; i++) {
+            const currentIdx = indices[i];
+            const t = (currentIdx - startIdx) / (endIdx - startIdx);
+            const newPos = pStart.clone().lerp(pEnd, t);
+            positions.setXYZ(currentIdx, newPos.x, newPos.y, newPos.z);
+            intermediaryIndices.push(currentIdx);
+        }
+
+        positions.needsUpdate = true;
+        await batchUpdateDbPositions(intermediaryIndices);
+    }
+
+    async function performRadialInterpolation(saveToDb = false) {
+        const indices = Array.from(selectedIndices).sort((a, b) => a - b);
+        if (indices.length < 3) return;
+
+        const positions = waypointsObject.geometry.attributes.position;
+        const startIdx = indices[0];
+        const endIdx = indices[indices.length - 1];
+        
+        const p0 = new THREE.Vector3().fromBufferAttribute(positions, startIdx);
+        const p3 = new THREE.Vector3().fromBufferAttribute(positions, endIdx);
+
+        const prevIdx = startIdx - 1;
+        let p_minus_1 = prevIdx >= 0 ? 
+            new THREE.Vector3().fromBufferAttribute(positions, prevIdx) :
+            p0.clone().add(p0.clone().sub(new THREE.Vector3().fromBufferAttribute(positions, startIdx + 1)));
+
+        const nextIdx = endIdx + 1;
+        let p_plus_1 = nextIdx < positions.count ? 
+            new THREE.Vector3().fromBufferAttribute(positions, nextIdx) :
+            p3.clone().add(p3.clone().sub(new THREE.Vector3().fromBufferAttribute(positions, endIdx - 1)));
+
+        const strength = parseFloat(document.getElementById('radial-strength').value);
+        const tension = 0.35; // A constant to control the 'pull' from adjacent points
+
+        // 1. Get the direction of the tangents for continuity
+        const tangentDir0 = p3.clone().sub(p_minus_1).normalize();
+        const tangentDir1 = p_plus_1.clone().sub(p0).normalize();
+
+        // 2. Define the magnitude of the control handles, proportional to the selection size
+        const chord = p3.clone().sub(p0);
+        const handleMagnitude = chord.length() * tension;
+        if (handleMagnitude < 1e-6) return; // Avoid issues with zero-length selections
+
+        // 3. Calculate the base control points for a smooth, continuous curve
+        let p1 = p0.clone().add(tangentDir0.multiplyScalar(handleMagnitude));
+        let p2 = p3.clone().sub(tangentDir1.multiplyScalar(handleMagnitude));
+
+        // 4. Calculate the bulge offset
+        const perp = new THREE.Vector3(-chord.y, chord.x, 0).normalize();
+        const offsetVector = perp.multiplyScalar(strength);
+
+        // 5. Add the bulge to the base control points
+        p1.add(offsetVector);
+        p2.add(offsetVector);
+
+        const intermediaryIndices = [];
+        for (let i = 1; i < indices.length - 1; i++) {
+            const currentIdx = indices[i];
+            const t = (currentIdx - startIdx) / (endIdx - startIdx);
+            
+            const t_inv = 1 - t;
+            const c0 = t_inv * t_inv * t_inv;
+            const c1 = 3 * t_inv * t_inv * t;
+            const c2 = 3 * t_inv * t * t;
+            const c3 = t * t * t;
+            
+            const newPos = p0.clone().multiplyScalar(c0)
+                .add(p1.clone().multiplyScalar(c1))
+                .add(p2.clone().multiplyScalar(c2))
+                .add(p3.clone().multiplyScalar(c3));
+            
+            positions.setXYZ(currentIdx, newPos.x, newPos.y, newPos.z);
+            intermediaryIndices.push(currentIdx);
+        }
+
+        positions.needsUpdate = true;
+        
+        if (saveToDb) {
+            await batchUpdateDbPositions(intermediaryIndices);
+        }
+    }
+
 
     async function deletePointByIndex(index) {
         if (index === null) return;
@@ -478,14 +507,50 @@
         selectedPointIndex = index;
         if (selectedPointIndex !== null && selectedPointIndex < colors.count) {
             colors.setXYZ(selectedPointIndex, 1.0, 0.5, 0.0);
-            updateInfoPanel(selectedPointIndex);
+            updateInfoPanel();
         } else {
             infoPanel.classList.remove('visible');
         }
         colors.needsUpdate = true;
     }
 
-    function updateInfoPanel() { if (selectedIndices.size === 1) { const index = selectedIndices.values().next().value; const db_id = indexToDbId[index]; const stmt = db.prepare("SELECT x, y, z, roll, pitch, yaw FROM waypoints WHERE id = :id"); const result = stmt.getAsObject({':id': db_id}); stmt.free(); if (result.x !== undefined) { infoPanel.querySelector('h3').textContent = `Waypoint #${db_id}`; document.getElementById('info-x').textContent = result.x.toFixed(4); document.getElementById('info-y').textContent = result.y.toFixed(4); document.getElementById('info-z').textContent = result.z.toFixed(4); document.getElementById('info-roll').textContent = result.roll.toFixed(4); document.getElementById('info-pitch').textContent = result.pitch.toFixed(4); document.getElementById('info-yaw').textContent = result.yaw.toFixed(4); infoPanel.classList.add('visible'); } } else if (selectedIndices.size > 1) { infoPanel.querySelector('h3').textContent = `${selectedIndices.size} Waypoints Selected`; document.getElementById('info-x').textContent = '---'; document.getElementById('info-y').textContent = '---'; document.getElementById('info-z').textContent = '---'; document.getElementById('info-roll').textContent = '---'; document.getElementById('info-pitch').textContent = '---'; document.getElementById('info-yaw').textContent = '---'; infoPanel.classList.add('visible'); } else { infoPanel.classList.remove('visible'); } }
+    function updateInfoPanel() { 
+        const pathToolsPanel = document.getElementById('path-tools-panel');
+        if (selectedIndices.size > 2) {
+            pathToolsPanel.classList.add('visible');
+        } else {
+            pathToolsPanel.classList.remove('visible');
+        }
+
+        if (selectedIndices.size === 1) { 
+            const index = selectedIndices.values().next().value; 
+            const db_id = indexToDbId[index]; 
+            const stmt = db.prepare("SELECT x, y, z, roll, pitch, yaw FROM waypoints WHERE id = :id"); 
+            const result = stmt.getAsObject({':id': db_id}); 
+            stmt.free(); 
+            if (result.x !== undefined) { 
+                infoPanel.querySelector('h3').textContent = `Waypoint #${db_id}`; 
+                document.getElementById('info-x').textContent = result.x.toFixed(4); 
+                document.getElementById('info-y').textContent = result.y.toFixed(4); 
+                document.getElementById('info-z').textContent = result.z.toFixed(4); 
+                document.getElementById('info-roll').textContent = result.roll.toFixed(4); 
+                document.getElementById('info-pitch').textContent = result.pitch.toFixed(4); 
+                document.getElementById('info-yaw').textContent = result.yaw.toFixed(4); 
+                infoPanel.classList.add('visible'); 
+            } 
+        } else if (selectedIndices.size > 1) { 
+            infoPanel.querySelector('h3').textContent = `${selectedIndices.size} Waypoints Selected`; 
+            document.getElementById('info-x').textContent = '---'; 
+            document.getElementById('info-y').textContent = '---'; 
+            document.getElementById('info-z').textContent = '---'; 
+            document.getElementById('info-roll').textContent = '---'; 
+            document.getElementById('info-pitch').textContent = '---'; 
+            document.getElementById('info-yaw').textContent = '---'; 
+            infoPanel.classList.add('visible'); 
+        } else { 
+            infoPanel.classList.remove('visible'); 
+        } 
+    }
 
 
     // --- Map Display Options
@@ -638,9 +703,7 @@
             const positions = waypointsObject.geometry.attributes.position;
             positions.setXYZ(selectedPointIndex, intersection.x, intersection.y, intersection.z);
             positions.needsUpdate = true;
-            document.getElementById('info-x').textContent = intersection.x.toFixed(4);
-            document.getElementById('info-y').textContent = intersection.y.toFixed(4);
-            document.getElementById('info-z').textContent = intersection.z.toFixed(4);
+            // The info panel gets fully updated on pointer up
         }
     }
 
@@ -652,7 +715,9 @@
             const posAttr = waypointsObject.geometry.attributes.position;
             const pos = new THREE.Vector3().fromBufferAttribute(posAttr, selectedPointIndex);
             updatePointInDb(db_id, pos);
-            updateInfoPanel(selectedPointIndex);
+            clearSelection();
+            selectedIndices.add(selectedPointIndex);
+            updateInfoPanel();
         }
         isDragging = false;
         if(controls) controls.enabled = true;
@@ -674,39 +739,62 @@
     const viewSelect = document.getElementById('view-select');
     const lockRotationBtn = document.getElementById('lock-rotation');
     
+    // NEW: Updated event listeners for path tools
+    document.getElementById('linear-interpolate').addEventListener('click', linearInterpolateSelected);
+    // Live preview on drag
+    document.getElementById('radial-strength').addEventListener('input', () => performRadialInterpolation(false));
+    // Save to DB on release
+    document.getElementById('radial-strength').addEventListener('change', () => performRadialInterpolation(true));
+
+    ////////////////
+
     function onMapFileSelect(file) {
+        document.getElementById('loader').style.display = 'block';
+        document.getElementById('loader').textContent = 'Loading Map...';
         const url = URL.createObjectURL(file);
         const loader = file.name.toLowerCase().endsWith('.ply') ? new PLYLoader() : new PCDLoader();
-    
-        loader.load(url, geometryOrPoints => {
-            const finalObject = geometryOrPoints.isPoints 
-                ? geometryOrPoints 
-                : new THREE.Points(geometryOrPoints, new THREE.PointsMaterial({ size: 1.0, vertexColors: geometryOrPoints.attributes.color !== undefined }));
-    
-            originalMapGeometry = finalObject.geometry;
-            originalMapGeometry.computeBoundingBox();
-            
+        
+        loader.load(url, (object) => {
+            const geometry = object.isPoints ? object.geometry : object;
             if (mapObject) {
                 scene.remove(mapObject);
                 mapObject.geometry.dispose();
                 mapObject.material.dispose();
             }
+
+            // Center the map geometry and store the offset
+            geometry.computeBoundingBox();
+            geometry.boundingBox.getCenter(mapOffset);
+            geometry.translate(-mapOffset.x, -mapOffset.y, -mapOffset.z);
             
-            mapObject = finalObject;
+            originalMapGeometry = geometry.clone();
+            
+            const material = new THREE.PointsMaterial({
+                size: 0.5,
+                vertexColors: originalMapGeometry.attributes.color !== undefined
+            });
+            mapObject = new THREE.Points(originalMapGeometry.clone(), material);
             scene.add(mapObject);
             
-            document.getElementById('point-size').value = 1.0;
+            if (db) {
+                refreshWaypointsFromDB();
+            }
+            
+            document.getElementById('point-size').value = 0.5;
             document.getElementById('color-mode').value = 'default';
             document.getElementById('voxel-size').value = 0;
             displayPanel.classList.remove('visible');
+            document.getElementById('loader').style.display = 'none';
             
             setView(viewSelect.value);
             URL.revokeObjectURL(url);
         }, undefined, (error) => {
             console.error("Error loading map file:", error);
             alert("Failed to load map file. Please check the console for details.");
+            document.getElementById('loader').style.display = 'none';
         });
     }
+
 
     function updateButtonState() {
         const hasDb = db !== null;
@@ -721,7 +809,9 @@
         editToolbar.style.display = editMode ? 'flex' : 'none';
         document.getElementById('hint').style.display = editMode ? 'none' : 'block';
         document.getElementById('hint-edit').style.display = editMode ? 'block' : 'none';
-        if (!editMode) selectPoint(null);
+        if (!editMode) {
+          clearSelection();
+        };
     }
     
     mapFileInput.addEventListener('change', e => e.target.files[0] && onMapFileSelect(e.target.files[0]));
@@ -747,15 +837,6 @@
 
     const editModeButtons = { add: document.getElementById('edit-add'), move: document.getElementById('edit-move'), delete: document.getElementById('edit-delete'), select: document.getElementById('edit-select'), };
 
-    // Object.entries(editModeButtons).forEach(([mode, button]) => {
-    //     button.addEventListener('click', () => {
-    //         editSubMode = mode;
-    //         Object.values(editModeButtons).forEach(btn => btn.classList.remove('active'));
-    //         button.classList.add('active');
-    //         app.classList.toggle('delete-mode', mode === 'delete');
-    //     });
-    // });
-
     Object.entries(editModeButtons).forEach(([mode, button]) => { button.addEventListener('click', () => { if (mode !== 'select') { pathSelectionStartIndex = null; updateAllColors(); } editSubMode = mode; Object.values(editModeButtons).forEach(btn => btn.classList.remove('active')); button.classList.add('active'); app.classList.toggle('delete-mode', mode === 'delete'); switch(mode) { case 'add': hintSpan.textContent = "Click on the grid to add a waypoint."; break; case 'move': hintSpan.textContent = "Click and drag selected points to move them."; break; case 'delete': hintSpan.textContent = "Click a waypoint or selection to delete."; break; case 'select': hintSpan.textContent = "Click a start and end point to select a path."; break; } }); });
 
 
@@ -772,7 +853,6 @@
             return;
         }
         
-        // --- FIX: Swapped Ctrl and Ctrl+Shift logic ---
         if (e.ctrlKey && e.shiftKey) {
             controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE; // Orbit
             cameraModeIndicator.textContent = "Camera Mode: Pan";
@@ -806,18 +886,6 @@
 
 
     // --- Helper & View Functions ---
-    // function onMapFileSelect(file) {
-    //     const url = URL.createObjectURL(file);
-    //     const loader = file.name.toLowerCase().endsWith('.ply') ? new PLYLoader() : new PCDLoader();
-    //     loader.load(url, geometryOrPoints => {
-    //         if (mapObject) scene.remove(mapObject);
-    //         mapObject = geometryOrPoints.isPoints ? geometryOrPoints : new THREE.Points(geometryOrPoints, new THREE.PointsMaterial({ size: 0.01, vertexColors: true}));
-    //         scene.add(mapObject);
-    //         setView(viewSelect.value);
-    //         URL.revokeObjectURL(url);
-    //     });
-    // }
-
     function setView(viewType) {
         if (controls) { controls.dispose(); }
 
@@ -908,3 +976,4 @@
   </script>
 </body>
 </html>
+
