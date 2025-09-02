@@ -132,6 +132,10 @@
         <button id="edit-select" class="active">Select</button>
         <button id="edit-move">Move</button>
         <button id="edit-delete">Delete</button>
+        <!-- NEW: Undo/Redo buttons -->
+        <span style="border-left: 1px solid #444; margin: 0 4px;"></span>
+        <button id="edit-undo" disabled>Undo</button>
+        <button id="edit-redo" disabled>Redo</button>
     </div>
     <select id="view-select">
       <option value="perspective">Perspective View</option>
@@ -175,7 +179,6 @@
       </div>
   </div>
 
-  <!-- NEW: Updated Path Tools panel for better UX -->
   <div id="path-tools-panel" class="side-panel">
       <h3>Path Tools</h3>
       <p style="font-size: 13px; color: #9fb0d0; margin-top: -10px; margin-bottom: 15px;">Requires a path selection (3+ points).</p>
@@ -238,6 +241,10 @@
     let indexToDbId = [];
     let dynamicPointSize = 0.05;
     let pathSelectionStartIndex = null;
+    let ghostWaypointsObject = null; // NEW
+    let undoStack = []; // NEW
+    let redoStack = []; // NEW
+    const MAX_HISTORY = 50; // NEW
     
     const raycaster = new THREE.Raycaster();
     raycaster.params.Points.threshold = 0.05;
@@ -261,6 +268,88 @@
       
     async function initDatabase() {
         SQL = await initSqlJs({ locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/${file}` });
+    }
+
+    // --- NEW: Undo/Redo and State Management ---
+    const undoBtn = document.getElementById('edit-undo');
+    const redoBtn = document.getElementById('edit-redo');
+
+    function updateUndoRedoButtons() {
+        undoBtn.disabled = undoStack.length < 2;
+        redoBtn.disabled = redoStack.length === 0;
+    }
+
+    function recordState() {
+        if (!db) return;
+        redoStack = []; // Clear redo stack on a new action
+        const dbState = db.export();
+        undoStack.push(dbState);
+        if (undoStack.length > MAX_HISTORY) {
+            undoStack.shift(); // Keep stack size manageable
+        }
+        updateUndoRedoButtons();
+    }
+
+    async function undo() {
+        if (undoStack.length < 2) return;
+        const currentState = undoStack.pop();
+        redoStack.push(currentState);
+        
+        const prevState = undoStack[undoStack.length - 1];
+        if (db) db.close();
+        db = new SQL.Database(new Uint8Array(prevState));
+        
+        await refreshWaypointsFromDB();
+        clearGhostPreview(); // Clear any lingering previews
+        updateUndoRedoButtons();
+    }
+
+    async function redo() {
+        if (redoStack.length === 0) return;
+        const nextState = redoStack.pop();
+        undoStack.push(nextState);
+
+        if (db) db.close();
+        db = new SQL.Database(new Uint8Array(nextState));
+
+        await refreshWaypointsFromDB();
+        clearGhostPreview(); // Clear any lingering previews
+        updateUndoRedoButtons();
+    }
+
+    // --- NEW: Ghost Preview for Edits ---
+    function createGhostPreview() {
+        clearGhostPreview(); // Clear any existing one first
+
+        const indices = Array.from(selectedIndices);
+        if (indices.length === 0 || !waypointsObject) return;
+
+        const positions = waypointsObject.geometry.attributes.position;
+        const ghostPositions = [];
+        for (const index of indices) {
+            ghostPositions.push(positions.getX(index), positions.getY(index), positions.getZ(index));
+        }
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(ghostPositions, 3));
+        const material = new THREE.PointsMaterial({
+            size: camera.isPerspectiveCamera ? dynamicPointSize : 3.0,
+            sizeAttenuation: camera.isPerspectiveCamera,
+            color: 0x8888ff,
+            transparent: true,
+            opacity: 0.4
+        });
+        ghostWaypointsObject = new THREE.Points(geometry, material);
+        scene.add(ghostWaypointsObject);
+    }
+
+    function clearGhostPreview() {
+        if (ghostWaypointsObject) {
+            scene.remove(ghostWaypointsObject);
+            ghostWaypointsObject.geometry.dispose();
+            ghostWaypointsObject.material.dispose();
+            ghostWaypointsObject = null;
+        }
     }
 
     // --- Waypoint Loading and Management ---
@@ -318,6 +407,10 @@
             db = new SQL.Database(new Uint8Array(buffer));
             const res = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='waypoints';");
             if (res.length === 0) throw new Error("Database does not contain a 'waypoints' table.");
+            
+            undoStack = []; // NEW
+            redoStack = []; // NEW
+            recordState();   // NEW: Record initial state
         } catch (err) {
             alert(`Error loading database: ${err.message}`);
             db = null;
@@ -336,6 +429,9 @@
         
         db = new SQL.Database();
         db.run(WAYPOINT_TABLE_SQL);
+        undoStack = []; // NEW
+        redoStack = []; // NEW
+        recordState();   // NEW: Record initial state
         refreshWaypointsFromDB();
         updateButtonState();
     }
@@ -354,6 +450,7 @@
     // --- Point Manipulation ---
     async function addPoint(position) {
         if (!db) return;
+        recordState(); // NEW
         const dbPosition = position.clone().add(mapOffset);
         db.run("INSERT INTO waypoints (x, y, z, roll, pitch, yaw) VALUES (?, ?, ?, 0, 0, 0)", [dbPosition.x, dbPosition.y, dbPosition.z]);
         await refreshWaypointsFromDB();
@@ -389,6 +486,9 @@
     async function linearInterpolateSelected() {
         const indices = Array.from(selectedIndices).sort((a, b) => a - b);
         if (indices.length < 3) return; 
+        
+        recordState(); // NEW
+        createGhostPreview(); // NEW
 
         const positions = waypointsObject.geometry.attributes.position;
         const startIdx = indices[0];
@@ -408,6 +508,7 @@
 
         positions.needsUpdate = true;
         await batchUpdateDbPositions(intermediaryIndices);
+        setTimeout(clearGhostPreview, 1000); // NEW
     }
 
     async function performRadialInterpolation(saveToDb = false) {
@@ -434,24 +535,19 @@
         const strength = parseFloat(document.getElementById('radial-strength').value);
         const tension = 0.35; // A constant to control the 'pull' from adjacent points
 
-        // 1. Get the direction of the tangents for continuity
         const tangentDir0 = p3.clone().sub(p_minus_1).normalize();
         const tangentDir1 = p_plus_1.clone().sub(p0).normalize();
 
-        // 2. Define the magnitude of the control handles, proportional to the selection size
         const chord = p3.clone().sub(p0);
         const handleMagnitude = chord.length() * tension;
-        if (handleMagnitude < 1e-6) return; // Avoid issues with zero-length selections
+        if (handleMagnitude < 1e-6) return;
 
-        // 3. Calculate the base control points for a smooth, continuous curve
         let p1 = p0.clone().add(tangentDir0.multiplyScalar(handleMagnitude));
         let p2 = p3.clone().sub(tangentDir1.multiplyScalar(handleMagnitude));
 
-        // 4. Calculate the bulge offset
         const perp = new THREE.Vector3(-chord.y, chord.x, 0).normalize();
         const offsetVector = perp.multiplyScalar(strength);
 
-        // 5. Add the bulge to the base control points
         p1.add(offsetVector);
         p2.add(offsetVector);
 
@@ -485,13 +581,28 @@
 
     async function deletePointByIndex(index) {
         if (index === null) return;
+        recordState(); // NEW
         const db_id = indexToDbId[index];
         db.run("DELETE FROM waypoints WHERE id = ?", [db_id]);
         await refreshWaypointsFromDB();
         selectPoint(null);
     }
-    async function deleteSelectedPoints() { if (!db || selectedIndices.size === 0) return; const idsToDelete = Array.from(selectedIndices).map(index => indexToDbId[index]); if (idsToDelete.length === 0) return; const placeholders = idsToDelete.map(() => '?').join(','); db.run(`DELETE FROM waypoints WHERE id IN (${placeholders})`, idsToDelete); await refreshWaypointsFromDB(); }
-    function clearSelection() { selectedIndices.clear(); pathSelectionStartIndex = null; updateAllColors(); updateInfoPanel(); }
+    async function deleteSelectedPoints() { 
+        if (!db || selectedIndices.size === 0) return; 
+        recordState(); // NEW
+        const idsToDelete = Array.from(selectedIndices).map(index => indexToDbId[index]); 
+        if (idsToDelete.length === 0) return; 
+        const placeholders = idsToDelete.map(() => '?').join(','); 
+        db.run(`DELETE FROM waypoints WHERE id IN (${placeholders})`, idsToDelete); 
+        await refreshWaypointsFromDB(); 
+    }
+    function clearSelection() { 
+        selectedIndices.clear(); 
+        pathSelectionStartIndex = null; 
+        updateAllColors(); 
+        updateInfoPanel();
+        clearGhostPreview(); // NEW
+    }
     function updateAllColors() { if (!waypointsObject) return; const positions = waypointsObject.geometry.attributes.position; const colors = new Float32Array(positions.count * 3); const selectedColor = new THREE.Color(0xff8800); const defaultColor = new THREE.Color(0xffff00); const startColor = new THREE.Color(0x00ff00); for (let i = 0; i < positions.count; i++) { let color = defaultColor; if (i === pathSelectionStartIndex) { color = startColor; } else if (selectedIndices.has(i)) { color = selectedColor; } colors[i * 3] = color.r; colors[i * 3 + 1] = color.g; colors[i * 3 + 2] = color.b; } waypointsObject.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3)); }
 
 
@@ -703,7 +814,6 @@
             const positions = waypointsObject.geometry.attributes.position;
             positions.setXYZ(selectedPointIndex, intersection.x, intersection.y, intersection.z);
             positions.needsUpdate = true;
-            // The info panel gets fully updated on pointer up
         }
     }
 
@@ -711,6 +821,7 @@
         if (isCameraOverrideActive) return;
 
         if (editMode && isDragging && selectedPointIndex !== null) {
+            recordState(); // NEW
             const db_id = indexToDbId[selectedPointIndex];
             const posAttr = waypointsObject.geometry.attributes.position;
             const pos = new THREE.Vector3().fromBufferAttribute(posAttr, selectedPointIndex);
@@ -739,12 +850,18 @@
     const viewSelect = document.getElementById('view-select');
     const lockRotationBtn = document.getElementById('lock-rotation');
     
-    // NEW: Updated event listeners for path tools
     document.getElementById('linear-interpolate').addEventListener('click', linearInterpolateSelected);
-    // Live preview on drag
-    document.getElementById('radial-strength').addEventListener('input', () => performRadialInterpolation(false));
-    // Save to DB on release
-    document.getElementById('radial-strength').addEventListener('change', () => performRadialInterpolation(true));
+    const radialSlider = document.getElementById('radial-strength');
+    radialSlider.addEventListener('input', () => performRadialInterpolation(false));
+    radialSlider.addEventListener('pointerdown', createGhostPreview);
+    radialSlider.addEventListener('change', () => {
+        recordState();
+        performRadialInterpolation(true);
+        clearGhostPreview();
+    });
+    document.getElementById('edit-undo').addEventListener('click', undo);
+    document.getElementById('edit-redo').addEventListener('click', redo);
+
 
     ////////////////
 
@@ -762,7 +879,6 @@
                 mapObject.material.dispose();
             }
 
-            // Center the map geometry and store the offset
             geometry.computeBoundingBox();
             geometry.boundingBox.getCenter(mapOffset);
             geometry.translate(-mapOffset.x, -mapOffset.y, -mapOffset.z);
@@ -865,6 +981,18 @@
     }
 
     window.addEventListener('keydown', (e) => {
+        if (e.ctrlKey && e.key.toLowerCase() === 'z') {
+            e.preventDefault();
+            if (e.shiftKey) {
+                redo();
+            } else {
+                undo();
+            }
+        } else if (e.ctrlKey && e.key.toLowerCase() === 'y') {
+            e.preventDefault();
+            redo();
+        }
+
         if (editMode && e.key === 'Control' && !isCameraOverrideActive) {
             isCameraOverrideActive = true;
             controls.enabled = true;
@@ -878,9 +1006,9 @@
         if (e.key === 'Control') {
             isCameraOverrideActive = false;
             cameraModeIndicator.style.display = 'none';
-            controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE; // Restore default
+            controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
         } else if (e.key === 'Shift' && isCameraOverrideActive) {
-            updateCameraModeIndicator(e); // Re-evaluates to Pan mode
+            updateCameraModeIndicator(e);
         }
     });
 
