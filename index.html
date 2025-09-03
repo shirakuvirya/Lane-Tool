@@ -170,15 +170,28 @@
       <p id="interpolation-info" class="panel-info-text">Click a start and end point on the path to begin.</p>
       <div class="control-grid">
           <button id="linear-interpolate" style="grid-column: 1 / -1;" disabled>Linear Interpolate</button>
-          <label style="grid-column: 1 / -1; margin-top: 8px; margin-bottom: -8px; color: #fff; background: none; border: none; padding: 0;">Curve (Radial)</label>
-          <small style="grid-column: 1 / -1; font-size: 11px; color: #9fb0d0; margin-bottom: 8px;">Changes are applied on slider release.</small>
-          <input type="range" id="radial-strength" min="-15" max="15" step="0.1" value="3" style="grid-column: 1 / -1;" disabled>
+          <label style="grid-column: 1 / -1; margin-top: 8px; margin-bottom: -4px; color: #fff; background: none; border: none; padding: 0;">Curve (Radial)</label>
+          <div style="grid-column: 1 / -1; display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center;">
+            <input type="range" id="radial-strength" min="-15" max="15" step="0.1" value="3" disabled>
+            <input type="number" id="radial-strength-value" min="-15" max="15" step="0.01" value="3" style="width: 70px; -moz-appearance: textfield;" disabled>
+          </div>
+          <small style="grid-column: 1 / -1; font-size: 11px; color: #9fb0d0; margin-top: -8px;">Changes are applied on release.</small>
       </div>
   </div>
 
   <div id="move-panel" class="side-panel">
     <h3>Move Tool</h3>
-    <p class="panel-info-text">Click and drag a selected point to move. If multiple points are selected, they will all move together.</p>
+    <p id="move-info" class="panel-info-text">Click and drag a selected point to move. If multiple points are selected, they will all move together.</p>
+    <h3 style="margin-top:20px; margin-bottom:10px; border:none; padding:0;">Selection Tools</h3>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+        <button id="move-select-box">Select Box</button>
+        <button id="move-select-path">Select Path</button>
+    </div>
+    <h3 style="margin-top:20px; margin-bottom:10px; border:none; padding:0;">Path Tools</h3>
+    <div style="display:flex; flex-direction:column; gap: 4px;">
+      <button id="generate-connections" style="width:100%;" disabled>Generate Path Connections</button>
+      <small style="font-size: 11px; color: #9fb0d0;">After moving points, generate a smooth transition to their neighbors.</small>
+    </div>
   </div>
 
   <div id="display-panel" class="side-panel">
@@ -249,6 +262,8 @@
     let originalMapGeometry = null;
     let editMode = false;
     let editSubMode = 'select'; // Default to select mode
+    let moveSubMode = 'drag'; // 'drag', 'box-select', 'path-select'
+    let movePathStartIndex = null;
     let selectedIndices = new Set();
     let isDraggingPoint = false;
     let dragStartIndex = -1;
@@ -259,12 +274,16 @@
     let indexToDbId = [];
     let dynamicPointSize = 0.05;
     let pathSelectionStartIndex = null;
+    let lastMovedIndices = null;
     let transientGhostObject = null;
     let persistentGhostObject = null;
     let undoStack = [];
     let redoStack = [];
     const MAX_HISTORY = 50;
     
+    // Interpolation State
+    let interpolationOriginalPositions = new Map();
+
     // Marquee Selection State
     let isMarqueeSelecting = false;
     const selectionBox = document.getElementById('selection-box');
@@ -486,6 +505,7 @@
         waypointsObject = new THREE.Points(geometry, material);
         
         // Restore selection
+        selectedIndices.clear();
         for (const dbId of oldSelectionDbIds) {
             if (dbIdToIndex.has(dbId)) {
                 selectedIndices.add(dbIdToIndex.get(dbId));
@@ -672,6 +692,104 @@
             await batchUpdateDbPositions(intermediaryIndices, newPositions);
         }
     }
+    
+    async function generatePathConnections() {
+        if (!lastMovedIndices || lastMovedIndices.size < 1) return;
+        if (!db) return;
+
+        recordState();
+        
+        // 1. Get all current points from DB into a JS array
+        const stmt = db.prepare("SELECT id, x, y, z, roll, pitch, yaw FROM waypoints ORDER BY id;");
+        const allPoints = [];
+        while(stmt.step()) {
+            const row = stmt.getAsObject();
+            allPoints.push({
+                x: row.x, y: row.y, z: row.z, 
+                roll: row.roll, pitch: row.pitch, yaw: row.yaw
+            });
+        }
+        stmt.free();
+
+        // 2. Calculate average distance for density heuristic
+        let totalDist = 0;
+        for (let i = 1; i < allPoints.length; i++) {
+            const p1 = new THREE.Vector3(allPoints[i-1].x, allPoints[i-1].y, allPoints[i-1].z);
+            const p2 = new THREE.Vector3(allPoints[i].x, allPoints[i].y, allPoints[i].z);
+            totalDist += p1.distanceTo(p2);
+        }
+        const avgDist = totalDist / (allPoints.length - 1) || 1.0; // Avoid division by zero
+
+        // 3. Identify connection points
+        const movedIdxs = Array.from(lastMovedIndices).sort((a,b) => a - b);
+        const minIdx = movedIdxs[0];
+        const maxIdx = movedIdxs[movedIdxs.length - 1];
+
+        const newPointsList = [...allPoints];
+        let insertOffset = 0;
+
+        // 4. Generate start connection
+        if (minIdx > 0) {
+            const p_before = new THREE.Vector3(allPoints[minIdx-1].x, allPoints[minIdx-1].y, allPoints[minIdx-1].z);
+            const p_start = new THREE.Vector3(allPoints[minIdx].x, allPoints[minIdx].y, allPoints[minIdx].z);
+            
+            const dist = p_before.distanceTo(p_start);
+            const numNewPoints = Math.max(0, Math.round(dist / avgDist) - 1);
+
+            if (numNewPoints > 0) {
+                const p_before_2 = minIdx > 1 ? new THREE.Vector3(allPoints[minIdx-2].x, allPoints[minIdx-2].y, allPoints[minIdx-2].z) : p_before.clone().lerp(p_start, -1);
+                const p_start_next = minIdx < allPoints.length - 1 ? new THREE.Vector3(allPoints[minIdx+1].x, allPoints[minIdx+1].y, allPoints[minIdx+1].z) : p_start.clone().lerp(p_before, -1);
+
+                const curve = new THREE.CatmullRomCurve3([p_before_2, p_before, p_start, p_start_next]);
+                const generatedPoints = curve.getPoints(numNewPoints + 1).slice(1); // Get points on the curve segment and slice off the start
+                
+                const newWaypoints = generatedPoints.map(p => ({ x:p.x, y:p.y, z:p.z, roll:0, pitch:0, yaw:0 }));
+                newPointsList.splice(minIdx, 0, ...newWaypoints);
+                insertOffset += numNewPoints;
+            }
+        }
+        
+        // 5. Generate end connection
+        if (maxIdx < allPoints.length - 1) {
+            const p_end = new THREE.Vector3(allPoints[maxIdx].x, allPoints[maxIdx].y, allPoints[maxIdx].z);
+            const p_after = new THREE.Vector3(allPoints[maxIdx+1].x, allPoints[maxIdx+1].y, allPoints[maxIdx+1].z);
+            
+            const dist = p_end.distanceTo(p_after);
+            const numNewPoints = Math.max(0, Math.round(dist / avgDist) - 1);
+            
+            if (numNewPoints > 0) {
+                const p_end_prev = maxIdx > 0 ? new THREE.Vector3(allPoints[maxIdx-1].x, allPoints[maxIdx-1].y, allPoints[maxIdx-1].z) : p_end.clone().lerp(p_after, -1);
+                const p_after_2 = maxIdx < allPoints.length - 2 ? new THREE.Vector3(allPoints[maxIdx+2].x, allPoints[maxIdx+2].y, allPoints[maxIdx+2].z) : p_after.clone().lerp(p_end, -1);
+                
+                const curve = new THREE.CatmullRomCurve3([p_end_prev, p_end, p_after, p_after_2]);
+                const generatedPoints = curve.getPoints(numNewPoints + 1).slice(1);
+                
+                const newWaypoints = generatedPoints.map(p => ({ x:p.x, y:p.y, z:p.z, roll:0, pitch:0, yaw:0 }));
+                newPointsList.splice(maxIdx + insertOffset + 1, 0, ...newWaypoints);
+            }
+        }
+
+        // 6. Update database
+        if (newPointsList.length !== allPoints.length) {
+            try {
+                db.run("BEGIN TRANSACTION");
+                db.run("DELETE FROM waypoints");
+                const insertStmt = db.prepare("INSERT INTO waypoints (x, y, z, roll, pitch, yaw) VALUES (?, ?, ?, ?, ?, ?)");
+                for(const point of newPointsList) {
+                    insertStmt.run([point.x, point.y, point.z, point.roll, point.pitch, point.yaw]);
+                }
+                insertStmt.free();
+                db.run("COMMIT");
+            } catch (e) {
+                console.error("Connection generation failed:", e);
+                db.run("ROLLBACK");
+            }
+        }
+
+        document.getElementById('generate-connections').disabled = true;
+        lastMovedIndices = null;
+        await refreshWaypointsFromDB();
+    }
 
     async function deleteSelectedPoints() { 
         if (!db || selectedIndices.size === 0) return; 
@@ -702,7 +820,7 @@
         
         for (let i = 0; i < positions.count; i++) { 
             let color = defaultColor; 
-            if (i === pathSelectionStartIndex) { 
+            if (i === pathSelectionStartIndex || i === movePathStartIndex) { 
                 color = pathStartColor; 
             } else if (selectedIndices.has(i)) { 
                 color = selectedColor; 
@@ -722,6 +840,8 @@
 
     function updateInfoPanel() { 
         updateActivePanels();
+        document.getElementById('move-info').textContent = selectedIndices.size > 0 ? `${selectedIndices.size} points selected.` : `Select points to move.`;
+
         if (selectedIndices.size === 1) { 
             const index = selectedIndices.values().next().value; 
             const db_id = indexToDbId[index]; 
@@ -752,6 +872,7 @@
         const infoText = document.getElementById('interpolation-info');
         const linearBtn = document.getElementById('linear-interpolate');
         const radialSlider = document.getElementById('radial-strength');
+        const radialValueInput = document.getElementById('radial-strength-value');
         const selectionSize = selectedIndices.size;
 
         if (pathSelectionStartIndex !== null && selectionSize > 0) {
@@ -765,6 +886,7 @@
         const canInterpolate = selectionSize >= 3;
         linearBtn.disabled = !canInterpolate;
         radialSlider.disabled = !canInterpolate;
+        radialValueInput.disabled = !canInterpolate;
     }
 
 
@@ -941,6 +1063,23 @@
                 }
                 break;
             case 'move':
+                handleMovePointerDown(clickedIndex, event);
+                break;
+            case 'delete': 
+                if (clickedIndex !== -1) {
+                    if (!selectedIndices.has(clickedIndex)) {
+                        clearSelection();
+                        selectedIndices.add(clickedIndex);
+                    }
+                    deleteSelectedPoints(); 
+                }
+                break;
+        }
+    }
+
+    function handleMovePointerDown(clickedIndex, event) {
+        switch (moveSubMode) {
+            case 'drag':
                 if (clickedIndex !== -1) {
                     isDraggingPoint = true;
                     dragStartIndex = clickedIndex;
@@ -949,6 +1088,7 @@
                         clearSelection();
                         selectedIndices.add(clickedIndex);
                         updateAllColors();
+                        updateInfoPanel();
                     }
                     
                     const positions = waypointsObject.geometry.attributes.position;
@@ -972,13 +1112,30 @@
                     createPersistentGhostPreview();
                 }
                 break;
-            case 'delete': 
+            case 'box-select':
+                isMarqueeSelecting = true;
+                controls.enabled = false;
+                marqueeStart.set(event.clientX, event.clientY);
+                selectionBox.style.display = 'block';
+                selectionBox.style.left = `${event.clientX}px`;
+                selectionBox.style.top = `${event.clientY}px`;
+                selectionBox.style.width = '0px';
+                selectionBox.style.height = '0px';
+                break;
+            case 'path-select':
                 if (clickedIndex !== -1) {
-                    if (!selectedIndices.has(clickedIndex)) {
+                    if (movePathStartIndex === null) {
                         clearSelection();
-                        selectedIndices.add(clickedIndex);
+                        movePathStartIndex = clickedIndex;
+                    } else {
+                        const start = Math.min(movePathStartIndex, clickedIndex);
+                        const end = Math.max(movePathStartIndex, clickedIndex);
+                        for (let i = start; i <= end; i++) selectedIndices.add(i);
+                        movePathStartIndex = null;
+                        moveSubMode = 'drag';
                     }
-                    deleteSelectedPoints(); 
+                    updateAllColors();
+                    updateInfoPanel();
                 }
                 break;
         }
@@ -1072,6 +1229,9 @@
         if (isMarqueeSelecting) {
             isMarqueeSelecting = false;
             selectionBox.style.display = 'none';
+            if(editSubMode === 'move') {
+                moveSubMode = 'drag';
+            }
             updateInfoPanel();
         }
 
@@ -1082,6 +1242,11 @@
             const newPositions = indicesToUpdate.map(index => new THREE.Vector3().fromBufferAttribute(positions, index));
             batchUpdateDbPositions(indicesToUpdate, newPositions);
             clearPersistentGhostPreview();
+
+            if (selectedIndices.size > 0) {
+                lastMovedIndices = new Set(selectedIndices);
+                document.getElementById('generate-connections').disabled = false;
+            }
         }
 
         isDraggingPoint = false;
@@ -1137,15 +1302,82 @@
     const lockRotationBtn = document.getElementById('lock-rotation');
     
     document.getElementById('linear-interpolate').addEventListener('click', linearInterpolateSelected);
+    document.getElementById('generate-connections').addEventListener('click', generatePathConnections);
+    
+    // Move Panel Buttons
+    document.getElementById('move-select-box').addEventListener('click', () => {
+        moveSubMode = 'box-select';
+    });
+     document.getElementById('move-select-path').addEventListener('click', () => {
+        moveSubMode = 'path-select';
+        movePathStartIndex = null;
+        clearSelection();
+    });
+
     const radialSlider = document.getElementById('radial-strength');
-    radialSlider.addEventListener('input', () => performRadialInterpolation(false));
-    radialSlider.addEventListener('pointerdown', createTransientGhostPreview);
-    radialSlider.addEventListener('change', () => {
-        clearTransientGhostPreview();
+    const radialValueInput = document.getElementById('radial-strength-value');
+
+    // --- Radial Interpolation Controls Synchronization ---
+    function restoreInterpolationPoints() {
+        if (interpolationOriginalPositions.size === 0 || !waypointsObject) return;
+        const positions = waypointsObject.geometry.attributes.position;
+        for (const [index, pos] of interpolationOriginalPositions) {
+            positions.setXYZ(index, pos.x, pos.y, pos.z);
+        }
+        positions.needsUpdate = true;
+    }
+
+    function syncAndPreviewRadial(value) {
+        const min = parseFloat(radialSlider.min);
+        const max = parseFloat(radialSlider.max);
+        let clampedValue = Math.max(min, Math.min(max, value));
+        radialSlider.value = clampedValue;
+        if (document.activeElement !== radialValueInput) {
+           radialValueInput.value = clampedValue.toFixed(2);
+        }
+        restoreInterpolationPoints();
+        performRadialInterpolation(false);
+    }
+
+    function commitRadialChange() {
+        restoreInterpolationPoints();
         recordState();
         createPersistentGhostPreview();
         performRadialInterpolation(true);
+        interpolationOriginalPositions.clear();
+        clearTransientGhostPreview();
+        let finalValue = parseFloat(radialSlider.value);
+        radialValueInput.value = finalValue.toFixed(2);
+    }
+    
+    const startRadialPreview = () => {
+        // Guard to prevent re-capturing points during a single interaction
+        if (interpolationOriginalPositions.size > 0) return;
+        
+        createTransientGhostPreview();
+        interpolationOriginalPositions.clear();
+        if (!waypointsObject) return;
+        const positions = waypointsObject.geometry.attributes.position;
+        for (const index of selectedIndices) {
+            interpolationOriginalPositions.set(index, new THREE.Vector3().fromBufferAttribute(positions, index));
+        }
+    };
+
+    radialSlider.addEventListener('input', () => syncAndPreviewRadial(parseFloat(radialSlider.value)));
+    radialValueInput.addEventListener('input', () => {
+        let value = parseFloat(radialValueInput.value);
+        if (!isNaN(value)) {
+            syncAndPreviewRadial(value);
+        }
     });
+
+    radialSlider.addEventListener('pointerdown', startRadialPreview);
+    radialValueInput.addEventListener('focus', startRadialPreview);
+    
+    radialSlider.addEventListener('change', commitRadialChange);
+    radialValueInput.addEventListener('change', commitRadialChange);
+    // --- End Radial Controls ---
+
     document.getElementById('edit-undo').addEventListener('click', undo);
     document.getElementById('edit-redo').addEventListener('click', redo);
 
@@ -1246,7 +1478,11 @@
 
     Object.entries(editModeButtons).forEach(([mode, button]) => { 
         button.addEventListener('click', () => { 
-            editSubMode = mode; 
+            editSubMode = mode;
+            moveSubMode = 'drag'; // Reset move sub-mode
+            lastMovedIndices = null; // Reset for rubber banding
+            document.getElementById('generate-connections').disabled = true;
+
             Object.values(editModeButtons).forEach(btn => btn.classList.remove('active')); 
             button.classList.add('active'); 
             app.classList.toggle('delete-mode', mode === 'delete'); 
@@ -1288,6 +1524,17 @@
     }
 
     window.addEventListener('keydown', (e) => {
+        const activeElement = document.activeElement;
+        const isInputActive = activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'SELECT');
+
+        // Prevent global shortcuts if an input is focused
+        if (isInputActive) {
+            if (e.key === 'Backspace' || e.key === 'Delete') {
+                // Allow default input behavior
+                return;
+            }
+        }
+
         if (e.key === 'Delete' || e.key === 'Backspace') {
             if (editMode && selectedIndices.size > 0) {
                 deleteSelectedPoints();
@@ -1295,9 +1542,11 @@
         }
         if (e.ctrlKey && e.key.toLowerCase() === 'z') {
             e.preventDefault();
+            if (isInputActive) return; // Prevent undo while typing
             if (e.shiftKey) redo(); else undo();
         } else if (e.ctrlKey && e.key.toLowerCase() === 'y') {
             e.preventDefault();
+            if (isInputActive) return; // Prevent redo while typing
             redo();
         }
 
@@ -1426,6 +1675,10 @@
     initDatabase().then(() => {
         setView('perspective'); // Initialize with a default view
         tick();
+    }).catch(err => {
+        console.error("Initialization failed:", err);
+        document.getElementById('loader').textContent = 'Error! Check console.';
+        alert("A fatal error occurred during initialization. The application may not work correctly. Please check the developer console for details.");
     });
   </script>
 </body>
