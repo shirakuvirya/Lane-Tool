@@ -302,6 +302,17 @@
     const editToolbar = document.getElementById('edit-toolbar');
     const cameraModeIndicator = document.getElementById('camera-mode-indicator');
 
+    // --- Coordinate System Transformations ---
+    // ROS (x-fwd, y-left, z-up) to Three.js (y-fwd, x-right, z-up)
+    function rosToThree(v) {
+        return new THREE.Vector3(-v.y, v.x, v.z);
+    }
+    // Three.js to ROS
+    function threeToRos(v) {
+        return new THREE.Vector3(v.y, -v.x, v.z);
+    }
+
+
     // --- Database Setup ---
     let db = null;
     let SQL = null;
@@ -410,7 +421,8 @@
         const allOldPositions = [];
         while (stmt.step()) {
             const row = stmt.get();
-            allOldPositions.push(row[0] - mapOffset.x, row[1] - mapOffset.y, row[2] - mapOffset.z);
+            const transformed = rosToThree({x: row[0], y: row[1], z: row[2]});
+            allOldPositions.push(transformed.x - mapOffset.x, transformed.y - mapOffset.y, transformed.z - mapOffset.z);
         }
         stmt.free();
         tempDb.close();
@@ -492,7 +504,8 @@
             const currentIndex = indexToDbId.length;
             indexToDbId.push(row[0]);
             dbIdToIndex.set(row[0], currentIndex);
-            positions.push(row[1] - mapOffset.x, row[2] - mapOffset.y, row[3] - mapOffset.z);
+            const transformed = rosToThree({x: row[1], y: row[2], z: row[3]});
+            positions.push(transformed.x - mapOffset.x, transformed.y - mapOffset.y, transformed.z - mapOffset.z);
         }
         stmt.free();
         
@@ -500,6 +513,10 @@
 
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        
+        // **FIX**: Compute bounding volumes after setting positions
+        geometry.computeBoundingBox();
+        geometry.computeBoundingSphere();
         
         const material = new THREE.PointsMaterial({ size: dynamicPointSize, vertexColors: true });
         waypointsObject = new THREE.Points(geometry, material);
@@ -575,8 +592,9 @@
     async function addPoint(position) {
         if (!db) return;
         recordState();
-        const dbPosition = position.clone().add(mapOffset);
-        db.run("INSERT INTO waypoints (x, y, z, roll, pitch, yaw) VALUES (?, ?, ?, 0, 0, 0)", [dbPosition.x, dbPosition.y, dbPosition.z]);
+        const threePos = position.clone().add(mapOffset);
+        const rosPos = threeToRos(threePos);
+        db.run("INSERT INTO waypoints (x, y, z, roll, pitch, yaw) VALUES (?, ?, ?, 0, 0, 0)", [rosPos.x, rosPos.y, rosPos.z]);
         await refreshWaypointsFromDB();
     }
         
@@ -588,8 +606,9 @@
             for (let i = 0; i < indicesToUpdate.length; i++) {
                 const index = indicesToUpdate[i];
                 const db_id = indexToDbId[index];
-                const newPos = newPositions[i].clone().add(mapOffset);
-                db.run("UPDATE waypoints SET x = ?, y = ?, z = ? WHERE id = ?", [newPos.x, newPos.y, newPos.z, db_id]);
+                const threePos = newPositions[i].clone().add(mapOffset);
+                const rosPos = threeToRos(threePos);
+                db.run("UPDATE waypoints SET x = ?, y = ?, z = ? WHERE id = ?", [rosPos.x, rosPos.y, rosPos.z, db_id]);
             }
             db.run("COMMIT");
         } catch (e) {
@@ -697,9 +716,16 @@
         if (!lastMovedIndices || lastMovedIndices.size < 1) return;
         if (!db) return;
 
+        document.getElementById('loader').textContent = 'Generating Path...';
+        document.getElementById('loader').style.display = 'block';
+        Object.values(editModeButtons).forEach(btn => btn.disabled = true);
+        undoBtn.disabled = true;
+        redoBtn.disabled = true;
+
+        await new Promise(resolve => setTimeout(resolve, 20));
+
         recordState();
         
-        // 1. Get all current points from DB into a JS array
         const stmt = db.prepare("SELECT id, x, y, z, roll, pitch, yaw FROM waypoints ORDER BY id;");
         const allPoints = [];
         while(stmt.step()) {
@@ -710,17 +736,7 @@
             });
         }
         stmt.free();
-
-        // 2. Calculate average distance for density heuristic
-        let totalDist = 0;
-        for (let i = 1; i < allPoints.length; i++) {
-            const p1 = new THREE.Vector3(allPoints[i-1].x, allPoints[i-1].y, allPoints[i-1].z);
-            const p2 = new THREE.Vector3(allPoints[i].x, allPoints[i].y, allPoints[i].z);
-            totalDist += p1.distanceTo(p2);
-        }
-        const avgDist = totalDist / (allPoints.length - 1) || 1.0; // Avoid division by zero
-
-        // 3. Identify connection points
+        
         const movedIdxs = Array.from(lastMovedIndices).sort((a,b) => a - b);
         const minIdx = movedIdxs[0];
         const maxIdx = movedIdxs[movedIdxs.length - 1];
@@ -728,48 +744,70 @@
         const newPointsList = [...allPoints];
         let insertOffset = 0;
 
-        // 4. Generate start connection
+        // Generate start connection
         if (minIdx > 0) {
+            const distances = [];
+            if (minIdx > 1) {
+                const p1 = new THREE.Vector3(allPoints[minIdx-2].x, allPoints[minIdx-2].y, allPoints[minIdx-2].z);
+                const p2 = new THREE.Vector3(allPoints[minIdx-1].x, allPoints[minIdx-1].y, allPoints[minIdx-1].z);
+                distances.push(p1.distanceTo(p2));
+            }
+            if (minIdx < allPoints.length -1) {
+                 const p1 = new THREE.Vector3(allPoints[minIdx].x, allPoints[minIdx].y, allPoints[minIdx].z);
+                 const p2 = new THREE.Vector3(allPoints[minIdx+1].x, allPoints[minIdx+1].y, allPoints[minIdx+1].z);
+                 distances.push(p1.distanceTo(p2));
+            }
+            const localAvgDist = distances.length > 0 ? distances.reduce((a,b) => a + b, 0) / distances.length : 1.0;
+
             const p_before = new THREE.Vector3(allPoints[minIdx-1].x, allPoints[minIdx-1].y, allPoints[minIdx-1].z);
             const p_start = new THREE.Vector3(allPoints[minIdx].x, allPoints[minIdx].y, allPoints[minIdx].z);
             
             const dist = p_before.distanceTo(p_start);
-            const numNewPoints = Math.max(0, Math.round(dist / avgDist) - 1);
+            const numNewPoints = Math.max(0, Math.round(dist / localAvgDist) - 1);
 
             if (numNewPoints > 0) {
                 const p_before_2 = minIdx > 1 ? new THREE.Vector3(allPoints[minIdx-2].x, allPoints[minIdx-2].y, allPoints[minIdx-2].z) : p_before.clone().lerp(p_start, -1);
                 const p_start_next = minIdx < allPoints.length - 1 ? new THREE.Vector3(allPoints[minIdx+1].x, allPoints[minIdx+1].y, allPoints[minIdx+1].z) : p_start.clone().lerp(p_before, -1);
-
                 const curve = new THREE.CatmullRomCurve3([p_before_2, p_before, p_start, p_start_next]);
-                const generatedPoints = curve.getPoints(numNewPoints + 1).slice(1); // Get points on the curve segment and slice off the start
-                
+                const generatedPoints = curve.getPoints(numNewPoints + 1).slice(1);
                 const newWaypoints = generatedPoints.map(p => ({ x:p.x, y:p.y, z:p.z, roll:0, pitch:0, yaw:0 }));
-                newPointsList.splice(minIdx, 0, ...newWaypoints);
+                newPointsList.splice(minIdx + insertOffset, 0, ...newWaypoints);
                 insertOffset += numNewPoints;
             }
         }
         
-        // 5. Generate end connection
+        // Generate end connection
         if (maxIdx < allPoints.length - 1) {
+            const distances = [];
+            if (maxIdx > 0) {
+                const p1 = new THREE.Vector3(allPoints[maxIdx-1].x, allPoints[maxIdx-1].y, allPoints[maxIdx-1].z);
+                const p2 = new THREE.Vector3(allPoints[maxIdx].x, allPoints[maxIdx].y, allPoints[maxIdx].z);
+                distances.push(p1.distanceTo(p2));
+            }
+            if (maxIdx < allPoints.length - 2) {
+                 const p1 = new THREE.Vector3(allPoints[maxIdx+1].x, allPoints[maxIdx+1].y, allPoints[maxIdx+1].z);
+                 const p2 = new THREE.Vector3(allPoints[maxIdx+2].x, allPoints[maxIdx+2].y, allPoints[maxIdx+2].z);
+                 distances.push(p1.distanceTo(p2));
+            }
+            const localAvgDist = distances.length > 0 ? distances.reduce((a,b) => a + b, 0) / distances.length : 1.0;
+
             const p_end = new THREE.Vector3(allPoints[maxIdx].x, allPoints[maxIdx].y, allPoints[maxIdx].z);
             const p_after = new THREE.Vector3(allPoints[maxIdx+1].x, allPoints[maxIdx+1].y, allPoints[maxIdx+1].z);
             
             const dist = p_end.distanceTo(p_after);
-            const numNewPoints = Math.max(0, Math.round(dist / avgDist) - 1);
+            const numNewPoints = Math.max(0, Math.round(dist / localAvgDist) - 1);
             
             if (numNewPoints > 0) {
                 const p_end_prev = maxIdx > 0 ? new THREE.Vector3(allPoints[maxIdx-1].x, allPoints[maxIdx-1].y, allPoints[maxIdx-1].z) : p_end.clone().lerp(p_after, -1);
                 const p_after_2 = maxIdx < allPoints.length - 2 ? new THREE.Vector3(allPoints[maxIdx+2].x, allPoints[maxIdx+2].y, allPoints[maxIdx+2].z) : p_after.clone().lerp(p_end, -1);
-                
                 const curve = new THREE.CatmullRomCurve3([p_end_prev, p_end, p_after, p_after_2]);
                 const generatedPoints = curve.getPoints(numNewPoints + 1).slice(1);
-                
                 const newWaypoints = generatedPoints.map(p => ({ x:p.x, y:p.y, z:p.z, roll:0, pitch:0, yaw:0 }));
                 newPointsList.splice(maxIdx + insertOffset + 1, 0, ...newWaypoints);
             }
         }
 
-        // 6. Update database
+        // Update database
         if (newPointsList.length !== allPoints.length) {
             try {
                 db.run("BEGIN TRANSACTION");
@@ -789,7 +827,12 @@
         document.getElementById('generate-connections').disabled = true;
         lastMovedIndices = null;
         await refreshWaypointsFromDB();
+
+        document.getElementById('loader').style.display = 'none';
+        Object.values(editModeButtons).forEach(btn => btn.disabled = false);
+        updateUndoRedoButtons();
     }
+
 
     async function deleteSelectedPoints() { 
         if (!db || selectedIndices.size === 0) return; 
@@ -1003,26 +1046,57 @@
     }
     
     // --- Event Listeners ---
-    function onPointerDown(event) {
-        if (!editMode || isCameraOverrideActive) return;
-        
+    // **FIX**: New robust intersection function
+    function getIntersectionIndex(event) {
+        if (!waypointsObject) return -1;
+
         const rect = renderer.domElement.getBoundingClientRect();
         pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-        
-        if(camera.isOrthographicCamera) {
-            raycaster.params.Points.threshold = dynamicPointSize / camera.zoom;
+
+        if (camera.isOrthographicCamera && viewSelect.value === 'top') {
+            const mouse = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+            let closestDistSq = Infinity;
+            let intersectIndex = -1;
+            const positions = waypointsObject.geometry.attributes.position;
+            const tempVec = new THREE.Vector3();
+            const threshold = 15; // Increased pixel radius for easier clicking
+
+            for (let i = 0; i < positions.count; i++) {
+                tempVec.fromBufferAttribute(positions, i);
+                tempVec.project(camera);
+
+                const screenX = (tempVec.x * 0.5 + 0.5) * rect.width;
+                const screenY = (-tempVec.y * 0.5 + 0.5) * rect.height;
+
+                const distSq = (screenX - mouse.x)**2 + (screenY - mouse.y)**2;
+                
+                if (distSq < threshold**2 && distSq < closestDistSq) {
+                    closestDistSq = distSq;
+                    intersectIndex = i;
+                }
+            }
+            return intersectIndex;
         } else {
-            raycaster.params.Points.threshold = dynamicPointSize;
+            if(camera.isOrthographicCamera) {
+                raycaster.params.Points.threshold = dynamicPointSize / camera.zoom;
+            } else {
+                raycaster.params.Points.threshold = dynamicPointSize;
+            }
+            raycaster.setFromCamera(pointer, camera);
+            const intersects = raycaster.intersectObject(waypointsObject);
+            return intersects.length > 0 ? intersects[0].index : -1;
         }
+    }
 
-        raycaster.setFromCamera(pointer, camera);
-
-        const intersects = waypointsObject ? raycaster.intersectObject(waypointsObject) : [];
-        const clickedIndex = intersects.length > 0 ? intersects[0].index : -1;
+    function onPointerDown(event) {
+        if (!editMode || isCameraOverrideActive) return;
+        
+        const clickedIndex = getIntersectionIndex(event);
         
         switch (editSubMode) {
             case 'add':
+                raycaster.setFromCamera(pointer, camera); // Raycaster needed for plane intersection
                 const intersectionAdd = new THREE.Vector3(); 
                 if (raycaster.ray.intersectPlane(raycastPlane, intersectionAdd)) addPoint(intersectionAdd);
                 break;
@@ -1102,6 +1176,7 @@
                     camera.getWorldDirection(cameraDirection);
                     raycastPlane.setFromNormalAndCoplanarPoint(cameraDirection, startPos);
 
+                    raycaster.setFromCamera(pointer, camera); // Needed for plane intersection
                     const intersectionMove = new THREE.Vector3();
                     if(raycaster.ray.intersectPlane(raycastPlane, intersectionMove)) {
                         dragStartOffset.subVectors(startPos, intersectionMove);
@@ -1149,25 +1224,13 @@
             }
             return;
         }
-
-        const rect = renderer.domElement.getBoundingClientRect();
-        pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-        pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
         
-        if(camera.isOrthographicCamera) {
-            raycaster.params.Points.threshold = dynamicPointSize / camera.zoom;
-        } else {
-            raycaster.params.Points.threshold = dynamicPointSize;
-        }
+        const intersectIndex = getIntersectionIndex(event);
 
-        raycaster.setFromCamera(pointer, camera);
-        const intersects = raycaster.intersectObject(waypointsObject);
-
-        if (intersects.length > 0) {
-            const index = intersects[0].index;
-            if (hoveredPointIndex !== index) {
-                hoveredPointIndex = index;
-                const pos = new THREE.Vector3().fromBufferAttribute(waypointsObject.geometry.attributes.position, index);
+        if (intersectIndex !== -1) {
+            if (hoveredPointIndex !== intersectIndex) {
+                hoveredPointIndex = intersectIndex;
+                const pos = new THREE.Vector3().fromBufferAttribute(waypointsObject.geometry.attributes.position, intersectIndex);
                 hoverIndicator.position.copy(pos);
                 hoverIndicator.visible = true;
             }
@@ -1395,8 +1458,21 @@
                 mapObject.material.dispose();
             }
 
+            // Apply ROS transformation to map
+            const positions = geometry.attributes.position.array;
+            for (let i = 0; i < positions.length; i += 3) {
+                let x = positions[i];
+                let y = positions[i+1];
+                positions[i] = -y; // three.x = -ros.y
+                positions[i+1] = x; // three.y = ros.x
+            }
+            geometry.attributes.position.needsUpdate = true;
             geometry.computeBoundingBox();
-            geometry.boundingBox.getCenter(mapOffset);
+            
+            // **FIX**: Align map bottom to grid
+            const box = geometry.boundingBox;
+            box.getCenter(mapOffset); // Get center for X, Y
+            mapOffset.z = box.min.z; // Use min for Z
             geometry.translate(-mapOffset.x, -mapOffset.y, -mapOffset.z);
             
             originalMapGeometry = geometry.clone();
