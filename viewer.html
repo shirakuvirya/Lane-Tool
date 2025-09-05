@@ -112,6 +112,68 @@
       display: none;
       z-index: 1000;
     }
+    #drawing-palette {
+        position: fixed; top: 12px; right: 12px; z-index: 10;
+        display: flex; gap: 8px; align-items: center;
+        background: rgba(20,24,33,0.7); border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 10px; padding: 8px 10px; color:#eaeefb; backdrop-filter: blur(6px);
+    }
+    #drawing-palette {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    z-index: 11;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+    background: rgba(20,24,33,0.9);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 10px;
+    padding: 8px 12px;
+    color: #eaeffb;
+    }
+    #drawing-palette button {
+    padding: 6px 12px;
+    font-size: 14px;
+    cursor: pointer;
+    }
+    #drawing-palette button.active {
+    background: #557fff;
+    border-color: #7faaff;
+    color: white;
+    }
+    #drawing-palette input[type="color"] {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    padding: 0;
+    background-color: transparent;
+    margin-left: 6px;
+    }
+    #drawing-palette input[type="color"]::-webkit-color-swatch {
+    border-radius: 8px;
+    border: 1px solid #3a4150;
+    }
+    #drawing-palette input[type="color"]::-moz-color-swatch {
+    border-radius: 8px;
+    border: 1px solid #3a4150;
+    }
+    #drawing-palette input[type="text"] {
+    width: 140px;
+    font-size: 14px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    border: 1px solid #3a4150;
+    background: #0b0e14;
+    color: #c8dffb;
+    margin-left: 8px;
+    }
   </style>
 </head>
 <body>
@@ -219,6 +281,20 @@
     <span id="edit-mode-hint">Select points by clicking or dragging a box.</span> <b>Hold Ctrl for camera.</b>
   </div>
   <div id="camera-mode-indicator"></div>
+  <div id="drawing-palette">
+    <button id="tool-rect">Rect</button>
+    <button id="tool-oval">Oval</button>
+    <button id="tool-triangle">Triangle</button>
+    <button id="tool-arrow">Arrow</button>
+    <button id="tool-pentagon">Pentagon</button>
+    <button id="tool-star">Star</button>
+    <button id="tool-select">Select</button>
+    <button id="tool-delete" disabled>Delete</button>
+    <label for="fill-color">Fill:</label>
+    <input type="color" id="fill-color" value="#557FFF" />
+    <label for="shape-text">Text:</label>
+    <input type="text" id="shape-text" placeholder="optional text" />
+  </div>
 
   <script type="module">
     import * as THREE from 'three';
@@ -301,6 +377,17 @@
     const displayPanel = document.getElementById('display-panel');
     const editToolbar = document.getElementById('edit-toolbar');
     const cameraModeIndicator = document.getElementById('camera-mode-indicator');
+
+
+    const shapeGroup = new THREE.Group();
+    scene.add(shapeGroup);
+
+    let currentTool = null;      // active shape tool string (rect, oval, etc. or 'select')
+    let drawing = false;
+    let startPoint = new THREE.Vector3();
+    let selectedShape = null;
+    let shapeCounter = 1;
+    const shapes = [];
 
     // --- Coordinate System Transformations ---
     // ROS (x-fwd, y-left, z-up) to Three.js (y-fwd, x-right, z-up)
@@ -407,6 +494,201 @@
             transientGhostObject.material.dispose();
             transientGhostObject = null;
         }
+    }
+
+    function createShapeGeometry(type, width, height) {
+    const halfWidth = width / 2;
+    const halfHeight = height / 2;
+    switch(type) {
+        case 'rect':
+        const rectShape = new THREE.Shape();
+        rectShape.moveTo(-halfWidth, -halfHeight);
+        rectShape.lineTo(halfWidth, -halfHeight);
+        rectShape.lineTo(halfWidth, halfHeight);
+        rectShape.lineTo(-halfWidth, halfHeight);
+        rectShape.closePath();
+        return new THREE.ShapeGeometry(rectShape);
+        case 'oval':
+        const ovalShape = new THREE.Shape();
+        ovalShape.absellipse(0, 0, halfWidth, halfHeight, 0, Math.PI*2, false);
+        return new THREE.ShapeGeometry(ovalShape);
+        case 'triangle':
+        const triShape = new THREE.Shape();
+        triShape.moveTo(0, halfHeight);
+        triShape.lineTo(-halfWidth, -halfHeight);
+        triShape.lineTo(halfWidth, -halfHeight);
+        triShape.closePath();
+        return new THREE.ShapeGeometry(triShape);
+        case 'arrow':
+        const arrowShape = new THREE.Shape();
+        const bodyW = halfWidth * 0.4;
+        const headW = halfWidth;
+        const headH = halfHeight * 0.4;
+        arrowShape.moveTo(0, halfHeight);
+        arrowShape.lineTo(-headW, halfHeight - headH);
+        arrowShape.lineTo(-bodyW, halfHeight - headH);
+        arrowShape.lineTo(-bodyW, -halfHeight);
+        arrowShape.lineTo(bodyW, -halfHeight);
+        arrowShape.lineTo(bodyW, halfHeight - headH);
+        arrowShape.lineTo(headW, halfHeight - headH);
+        arrowShape.closePath();
+        return new THREE.ShapeGeometry(arrowShape);
+        case 'pentagon':
+        const pentShape = new THREE.Shape();
+        const radius = Math.min(halfWidth, halfHeight);
+        for (let i = 0; i < 5; i++) {
+            const angle = (i * 2 * Math.PI) / 5 - Math.PI / 2;
+            const x = Math.cos(angle) * radius;
+            const y = Math.sin(angle) * radius;
+            if (i===0) pentShape.moveTo(x,y); else pentShape.lineTo(x,y);
+        }
+        pentShape.closePath();
+        return new THREE.ShapeGeometry(pentShape);
+        case 'star':
+        const starShape = new THREE.Shape();
+        const outerRadius = Math.min(halfWidth, halfHeight);
+        const innerRadius = outerRadius * 0.4;
+        for (let i = 0; i < 10; i++) {
+            const angle = (i * Math.PI) / 5 - Math.PI / 2;
+            const radius = i % 2 === 0 ? outerRadius : innerRadius;
+            const x = Math.cos(angle) * radius;
+            const y = Math.sin(angle) * radius;
+            if (i ===0 ) starShape.moveTo(x,y); else starShape.lineTo(x,y);
+        }
+        starShape.closePath();
+        return new THREE.ShapeGeometry(starShape);
+    }
+    return null;
+    }
+
+    function addShapeMesh(type, startPos, endPos, fillColor, text) {
+    const width = Math.abs(endPos.x - startPos.x);
+    const height = Math.abs(endPos.y - startPos.y);
+    if (width < 0.05 && height < 0.05) return null;
+
+    const geo = createShapeGeometry(type, width, height);
+    if (!geo) return null;
+
+    const mat = new THREE.MeshBasicMaterial({
+        color: fillColor || 0x4477ff,
+        transparent: true,
+        opacity: 0.6,
+        side: THREE.DoubleSide
+    });
+
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set((startPos.x + endPos.x)/2, (startPos.y + endPos.y)/2, 0.01);
+
+
+    if (text && text.trim().length > 0) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 256; canvas.height = 64;
+        const ctx = canvas.getContext('2d');
+        ctx.font = '24px sans-serif';
+        ctx.fillStyle = 'white';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, canvas.width/2, canvas.height/2);
+        const tex = new THREE.CanvasTexture(canvas);
+        const labelMat = new THREE.MeshBasicMaterial({map: tex, transparent: true});
+        const labelGeo = new THREE.PlaneGeometry(width * 0.8, height * 0.2);
+        const labelMesh = new THREE.Mesh(labelGeo, labelMat);
+        labelMesh.position.set(0, 0, 0.02);
+        mesh.add(labelMesh);
+    }
+
+    mesh.userData.shapeId = shapeCounter++;
+    shapes.push(mesh);
+    shapeGroup.add(mesh);
+    return mesh;
+    }
+
+    function selectShape(mesh) {
+    if (selectedShape) selectedShape.material.emissive?.setHex(0x000000);
+    selectedShape = mesh;
+    if (selectedShape) {
+        if (!selectedShape.material.emissive) selectedShape.material.emissive = new THREE.Color(0x000000);
+        selectedShape.material.emissive.setHex(0x888800);
+    }
+    }
+
+    function deleteSelectedShape() {
+    if (!selectedShape) return;
+    shapeGroup.remove(selectedShape);
+    selectedShape.geometry.dispose();
+    selectedShape.material.dispose();
+    shapes.splice(shapes.indexOf(selectedShape), 1);
+    selectedShape = null;
+    document.getElementById('tool-delete').disabled = true;
+    }
+
+    // --- Shape Event Handlers ---
+
+    renderer.domElement.addEventListener('pointerdown', (e) => {
+    if (!currentTool || currentTool === 'select') return;
+
+    const rect = renderer.domElement.getBoundingClientRect();
+    pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+    const point = new THREE.Vector3();
+    if (raycaster.ray.intersectPlane(raycastPlane, point)) {
+        startPoint.copy(point);
+        drawing = true;
+        e.stopPropagation();
+    }
+    });
+
+    renderer.domElement.addEventListener('pointerup', (e) => {
+    if (!drawing) return;
+
+    const rect = renderer.domElement.getBoundingClientRect();
+    pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(pointer, camera);
+    const point = new THREE.Vector3();
+    if (raycaster.ray.intersectPlane(raycastPlane, point)) {
+        const fillColor = document.getElementById('fill-color').value || '#4477ff';
+        const labelText = document.getElementById('shape-text').value || '';
+        addShapeMesh(currentTool, startPoint, point, fillColor, labelText);
+    }
+
+    drawing = false;
+    e.stopPropagation();
+    });
+
+    renderer.domElement.addEventListener('click', (e) => {
+    if (currentTool !== 'select') return;
+
+    const rect = renderer.domElement.getBoundingClientRect();
+    pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+    raycaster.setFromCamera(pointer, camera);
+    const intersects = raycaster.intersectObjects(shapeGroup.children);
+
+    if (intersects.length > 0) {
+        selectShape(intersects[0].object);
+        document.getElementById('tool-delete').disabled = false;
+    } else {
+        selectShape(null);
+        document.getElementById('tool-delete').disabled = true;
+    }
+    });
+
+    document.getElementById('tool-rect').onclick = () => { currentTool = 'rect'; updateActiveDrawingButton(); };
+    document.getElementById('tool-oval').onclick = () => { currentTool = 'oval'; updateActiveDrawingButton(); };
+    document.getElementById('tool-triangle').onclick = () => { currentTool = 'triangle'; updateActiveDrawingButton(); };
+    document.getElementById('tool-arrow').onclick = () => { currentTool = 'arrow'; updateActiveDrawingButton(); };
+    document.getElementById('tool-pentagon').onclick = () => { currentTool = 'pentagon'; updateActiveDrawingButton(); };
+    document.getElementById('tool-star').onclick = () => { currentTool = 'star'; updateActiveDrawingButton(); };
+    document.getElementById('tool-select').onclick = () => { currentTool = 'select'; updateActiveDrawingButton(); };
+    document.getElementById('tool-delete').onclick = () => deleteSelectedShape();
+
+    function updateActiveDrawingButton() {
+    ['tool-rect','tool-oval','tool-triangle','tool-arrow','tool-pentagon','tool-star','tool-select']
+        .forEach(id => document.getElementById(id).classList.remove('active'));
+    if(currentTool) document.getElementById('tool-' + currentTool).classList.add('active');
     }
     
     async function createPersistentGhostPreview() {
@@ -1732,4 +2014,3 @@
   </script>
 </body>
 </html>
-
