@@ -196,6 +196,7 @@
     <button id="save-waypoints" disabled>Save Waypoints (.db)</button>
     <span style="border-left: 1px solid #444; margin: 0 4px;"></span>
     <button id="add-label-toggle" disabled>Add Label</button>
+    <button id="generate-path" disabled>Generate Path</button>
     <button id="edit" disabled>Toggle Edit Mode</button>
     <div id="edit-toolbar">
         <button id="edit-add">Add</button>
@@ -363,6 +364,7 @@
     let undoStack = [];
     let redoStack = [];
     const MAX_HISTORY = 50;
+    let pathMesh = null;
    
     // Interpolation State
     let interpolationOriginalPositions = new Map();
@@ -782,6 +784,107 @@
         selectShape(null);
     }
     
+    // --- Path Generation ---
+    function clearPathMesh() {
+        if (pathMesh) {
+            scene.remove(pathMesh);
+            pathMesh.geometry.dispose();
+            pathMesh.material.dispose();
+            pathMesh = null;
+        }
+    }
+
+    async function generatePathMesh() {
+        clearPathMesh(); // Clear any existing path first
+        if (!db) return;
+    
+        const stmt = db.prepare("SELECT x, y, z FROM waypoints ORDER BY id;");
+        const waypoints = [];
+        while(stmt.step()) {
+            const row = stmt.get();
+            // User request: ignore points at 0, 0, 0
+            if (row[0] === 0 && row[1] === 0 && row[2] === 0) {
+                continue; // Skip this waypoint
+            }
+            const transformed = rosToThree({x: row[0], y: row[1], z: row[2]});
+            waypoints.push(transformed.sub(mapOffset));
+        }
+        stmt.free();
+    
+        if (waypoints.length < 2) {
+            alert("Need at least two waypoints to generate a path.");
+            return;
+        }
+    
+        const leftVerts = [];
+        const rightVerts = [];
+        const halfWidth =0.5; // 50cm
+    
+        for (let i = 0; i < waypoints.length; i++) {
+            const p_curr = waypoints[i];
+            let normal;
+            let miterScale = 1.0;
+    
+            if (i === 0) { // First point
+                const dir_out = waypoints[i+1].clone().sub(p_curr).normalize();
+                normal = new THREE.Vector3(-dir_out.y, dir_out.x, 0).normalize();
+            } else if (i === waypoints.length - 1) { // Last point
+                const dir_in = p_curr.clone().sub(waypoints[i-1]).normalize();
+                normal = new THREE.Vector3(-dir_in.y, dir_in.x, 0).normalize();
+            } else { // Middle point (miter join)
+                const p_prev = waypoints[i-1];
+                const p_next = waypoints[i+1];
+                const dir_in = p_curr.clone().sub(p_prev).normalize();
+                const dir_out = p_next.clone().sub(p_curr).normalize();
+    
+                const normal_in = new THREE.Vector3(-dir_in.y, dir_in.x, 0);
+                const normal_out = new THREE.Vector3(-dir_out.y, dir_out.x, 0);
+                
+                normal = normal_in.clone().add(normal_out).normalize();
+                
+                // Calculate miter scale to maintain constant width at corners
+                const dot = normal_in.dot(normal);
+                if (Math.abs(dot) > 0.0001) { // Avoid division by zero for straight lines
+                    miterScale = 1 / dot;
+                }
+            }
+    
+            leftVerts.push(p_curr.clone().add(normal.clone().multiplyScalar(halfWidth * miterScale)));
+            rightVerts.push(p_curr.clone().sub(normal.clone().multiplyScalar(halfWidth * miterScale)));
+        }
+    
+        // Build the geometry from left and right vertices
+        const vertices = [];
+        for (let i = 0; i < waypoints.length; i++) {
+            vertices.push(leftVerts[i].x, leftVerts[i].y, leftVerts[i].z);
+            vertices.push(rightVerts[i].x, rightVerts[i].y, rightVerts[i].z);
+        }
+    
+        const indices = [];
+        for (let i = 0; i < waypoints.length - 1; i++) {
+            const i2 = i * 2;
+            // Triangle 1
+            indices.push(i2, i2 + 1, i2 + 2);
+            // Triangle 2
+            indices.push(i2 + 2, i2 + 1, i2 + 3);
+        }
+    
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+        geometry.setIndex(indices);
+    
+        const material = new THREE.MeshBasicMaterial({
+            color: 0x559FFF,
+            transparent: true,
+            opacity: 0.4,
+            side: THREE.DoubleSide
+        });
+    
+        pathMesh = new THREE.Mesh(geometry, material);
+        pathMesh.renderOrder = -1; // Draw before the grid
+        scene.add(pathMesh);
+    }
+
     // --- Waypoint Loading and Management ---
     function clearVisualWaypoints() {
         if (waypointsObject) {
@@ -853,6 +956,7 @@
         if (!SQL) return alert("Database engine is not ready.");
        
         if (db) { db.close(); db = null; }
+        clearPathMesh();
         clearVisualWaypoints();
         document.getElementById('loader').style.display = 'block';
         await new Promise(resolve => setTimeout(resolve, 50));
@@ -881,6 +985,7 @@
     function createNewWaypointSet() {
         if (!SQL) return alert("Database engine is not ready.");
         if (db) db.close();
+        clearPathMesh();
        
         db = new SQL.Database();
         db.run(WAYPOINT_TABLE_SQL);
@@ -1798,7 +1903,9 @@
     const viewSelect = document.getElementById('view-select');
     const lockRotationBtn = document.getElementById('lock-rotation');
     const addLabelToggleBtn = document.getElementById('add-label-toggle');
+    const generatePathBtn = document.getElementById('generate-path');
    
+    generatePathBtn.addEventListener('click', generatePathMesh);
     document.getElementById('linear-interpolate').addEventListener('click', linearInterpolateSelected);
     document.getElementById('generate-connections').addEventListener('click', generatePathConnections);
    
@@ -1937,6 +2044,7 @@
         saveWaypointsBtn.disabled = !hasDb;
         editBtn.disabled = !hasDb;
         addLabelToggleBtn.disabled = !hasDb;
+        generatePathBtn.disabled = !hasDb;
         if (!hasDb && editMode) toggleEditMode();
     }
    
@@ -2219,3 +2327,4 @@
   </script>
 </body>
 </html>
+
