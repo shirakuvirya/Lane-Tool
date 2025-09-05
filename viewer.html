@@ -67,6 +67,7 @@
     #info-panel { right: 12px; }
     #interpolation-panel { right: 12px; }
     #move-panel { right: 12px; }
+    #zone-panel { right: 12px; }
     #display-panel {
         left: 12px;
         transform: translateX(calc(-100% - 24px));
@@ -179,6 +180,28 @@
       color: #c8dffb;
       margin-left: 8px;
     }
+    #zone-list {
+        margin-top: 15px;
+        max-height: 200px;
+        overflow-y: auto;
+    }
+    .zone-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 6px;
+        background: rgba(0,0,0,0.2);
+        border-radius: 4px;
+        margin-bottom: 5px;
+        font-size: 13px;
+    }
+    .zone-color-swatch {
+        width: 16px;
+        height: 16px;
+        border-radius: 4px;
+        margin-right: 8px;
+        border: 1px solid rgba(255,255,255,0.2);
+    }
   </style>
 </head>
 <body>
@@ -204,6 +227,7 @@
         <button id="edit-move">Move</button>
         <button id="edit-interpolate">Interpolate</button>
         <button id="edit-delete">Delete</button>
+        <button id="edit-zone">Zones</button>
         <span style="border-left: 1px solid #444; margin: 0 4px;"></span>
         <button id="edit-undo" disabled>Undo</button>
         <button id="edit-redo" disabled>Redo</button>
@@ -261,6 +285,19 @@
       <button id="generate-connections" style="width:100%;" disabled>Generate Path Connections</button>
       <small style="font-size: 11px; color: #9fb0d0;">After moving points, generate a smooth transition to their neighbors.</small>
     </div>
+  </div>
+
+  <div id="zone-panel" class="side-panel">
+    <h3>Zone Tools</h3>
+    <p id="zone-info" class="panel-info-text">Click a start waypoint to begin defining a new zone.</p>
+    <div class="control-grid">
+        <label>Zone Name:</label>
+        <input type="text" id="zone-name-input" placeholder="e.g., 'parking_area'" disabled>
+        <button id="create-zone-btn" style="grid-column: 1 / -1;" disabled>Create Zone</button>
+        <button id="clear-zone-selection-btn" style="grid-column: 1 / -1; display: none;">Clear Selection</button>
+    </div>
+    <h3 style="margin-top:20px;">Existing Zones</h3>
+    <div id="zone-list"></div>
   </div>
 
   <div id="display-panel" class="side-panel">
@@ -364,8 +401,13 @@
     let undoStack = [];
     let redoStack = [];
     const MAX_HISTORY = 50;
-    let pathMesh = null;
+    const pathGroup = new THREE.Group();
+    scene.add(pathGroup);
    
+    // Zone State
+    let zoneStartIndex = null;
+    const zoneColors = {};
+
     // Interpolation State
     let interpolationOriginalPositions = new Map();
 
@@ -382,6 +424,7 @@
     const infoPanel = document.getElementById('info-panel');
     const interpolationPanel = document.getElementById('interpolation-panel');
     const movePanel = document.getElementById('move-panel');
+    const zonePanel = document.getElementById('zone-panel');
     const hintMain = document.getElementById('hint');
     const displayPanel = document.getElementById('display-panel');
     const editToolbar = document.getElementById('edit-toolbar');
@@ -421,7 +464,8 @@
       CREATE TABLE IF NOT EXISTS waypoints (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           x REAL NOT NULL, y REAL NOT NULL, z REAL NOT NULL,
-          roll REAL DEFAULT 0, pitch REAL DEFAULT 0, yaw REAL DEFAULT 0
+          roll REAL DEFAULT 0, pitch REAL DEFAULT 0, yaw REAL DEFAULT 0,
+          zone TEXT DEFAULT 'N/A'
       );`;
      
     async function initDatabase() {
@@ -756,15 +800,12 @@
             }
             selectedShape.material.emissive.setHex(0xcccc00); // Highlight color
         }
-        // This button is now a tool, not an action on selection.
-        // document.getElementById('tool-delete').disabled = !selectedShape;
     }
 
     function deleteSelectedShape() {
         if (!selectedShape) return;
         recordState();
         
-        // Dispose of geometries and materials to free memory
         shapeGroup.remove(selectedShape);
         selectedShape.geometry.dispose();
         selectedShape.material.dispose();
@@ -786,103 +827,108 @@
     
     // --- Path Generation ---
     function clearPathMesh() {
-        if (pathMesh) {
-            scene.remove(pathMesh);
-            pathMesh.geometry.dispose();
-            pathMesh.material.dispose();
-            pathMesh = null;
+        while(pathGroup.children.length > 0){ 
+            const mesh = pathGroup.children[0];
+            pathGroup.remove(mesh); 
+            mesh.geometry.dispose();
+            mesh.material.dispose();
         }
     }
 
     async function generatePathMesh() {
-        clearPathMesh(); // Clear any existing path first
+        clearPathMesh();
         if (!db) return;
-    
-        const stmt = db.prepare("SELECT x, y, z FROM waypoints ORDER BY id;");
-        const waypoints = [];
+
+        const stmt = db.prepare("SELECT id, x, y, z, zone FROM waypoints ORDER BY id;");
+        const allWaypoints = [];
         while(stmt.step()) {
-            const row = stmt.get();
-            // User request: ignore points at 0, 0, 0
-            if (row[0] === 0 && row[1] === 0 && row[2] === 0) {
-                continue; // Skip this waypoint
-            }
-            const transformed = rosToThree({x: row[0], y: row[1], z: row[2]});
-            waypoints.push(transformed.sub(mapOffset));
+            allWaypoints.push(stmt.getAsObject());
         }
         stmt.free();
-    
-        if (waypoints.length < 2) {
-            alert("Need at least two waypoints to generate a path.");
-            return;
+
+        const waypoints = allWaypoints
+            .filter(wp => !(wp.x === 0 && wp.y === 0 && wp.z === 0))
+            .map(wp => ({
+                ...wp,
+                pos: rosToThree({x: wp.x, y: wp.y, z: wp.z}).sub(mapOffset)
+            }));
+
+        if (waypoints.length < 2) return;
+
+        let currentSegment = [];
+        for (let i = 0; i < waypoints.length; i++) {
+            currentSegment.push(waypoints[i]);
+            const currentZone = waypoints[i].zone || 'N/A';
+            const nextZone = (i + 1 < waypoints.length) ? (waypoints[i+1].zone || 'N/A') : null;
+
+            if (currentZone !== nextZone || i === waypoints.length - 1) {
+                if (currentSegment.length >= 2) {
+                    createPathSegmentMesh(currentSegment, currentZone);
+                }
+                currentSegment = [waypoints[i]]; // Start new segment with the current point
+            }
         }
-    
+        updateZoneList();
+    }
+
+    function createPathSegmentMesh(segmentPoints, zoneName) {
+        const points = segmentPoints.map(p => p.pos);
+        if (points.length < 2) return;
+
         const leftVerts = [];
         const rightVerts = [];
-        const halfWidth =0.5; // 50cm
-    
-        for (let i = 0; i < waypoints.length; i++) {
-            const p_curr = waypoints[i];
-            let normal;
-            let miterScale = 1.0;
-    
-            if (i === 0) { // First point
-                const dir_out = waypoints[i+1].clone().sub(p_curr).normalize();
+        const halfWidth = 0.5; // 50cm
+
+        for (let i = 0; i < points.length; i++) {
+            const p_curr = points[i];
+            let normal, miterScale = 1.0;
+
+            if (i === 0) {
+                const dir_out = points[i+1].clone().sub(p_curr).normalize();
                 normal = new THREE.Vector3(-dir_out.y, dir_out.x, 0).normalize();
-            } else if (i === waypoints.length - 1) { // Last point
-                const dir_in = p_curr.clone().sub(waypoints[i-1]).normalize();
+            } else if (i === points.length - 1) {
+                const dir_in = p_curr.clone().sub(points[i-1]).normalize();
                 normal = new THREE.Vector3(-dir_in.y, dir_in.x, 0).normalize();
-            } else { // Middle point (miter join)
-                const p_prev = waypoints[i-1];
-                const p_next = waypoints[i+1];
-                const dir_in = p_curr.clone().sub(p_prev).normalize();
-                const dir_out = p_next.clone().sub(p_curr).normalize();
-    
+            } else {
+                const dir_in = p_curr.clone().sub(points[i-1]).normalize();
+                const dir_out = points[i+1].clone().sub(p_curr).normalize();
                 const normal_in = new THREE.Vector3(-dir_in.y, dir_in.x, 0);
                 const normal_out = new THREE.Vector3(-dir_out.y, dir_out.x, 0);
-                
                 normal = normal_in.clone().add(normal_out).normalize();
-                
-                // Calculate miter scale to maintain constant width at corners
                 const dot = normal_in.dot(normal);
-                if (Math.abs(dot) > 0.0001) { // Avoid division by zero for straight lines
-                    miterScale = 1 / dot;
-                }
+                if (Math.abs(dot) > 0.0001) miterScale = 1 / dot;
             }
-    
             leftVerts.push(p_curr.clone().add(normal.clone().multiplyScalar(halfWidth * miterScale)));
             rightVerts.push(p_curr.clone().sub(normal.clone().multiplyScalar(halfWidth * miterScale)));
         }
-    
-        // Build the geometry from left and right vertices
+
         const vertices = [];
-        for (let i = 0; i < waypoints.length; i++) {
+        for (let i = 0; i < points.length; i++) {
             vertices.push(leftVerts[i].x, leftVerts[i].y, leftVerts[i].z);
             vertices.push(rightVerts[i].x, rightVerts[i].y, rightVerts[i].z);
         }
-    
+
         const indices = [];
-        for (let i = 0; i < waypoints.length - 1; i++) {
+        for (let i = 0; i < points.length - 1; i++) {
             const i2 = i * 2;
-            // Triangle 1
-            indices.push(i2, i2 + 1, i2 + 2);
-            // Triangle 2
-            indices.push(i2 + 2, i2 + 1, i2 + 3);
+            indices.push(i2, i2 + 1, i2 + 2, i2 + 2, i2 + 1, i2 + 3);
         }
-    
+
+        if (!zoneColors[zoneName]) {
+            zoneColors[zoneName] = (zoneName === 'N/A') ? 0x559FFF : new THREE.Color().setHSL(Math.random(), 0.7, 0.6).getHex();
+        }
+
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
         geometry.setIndex(indices);
-    
         const material = new THREE.MeshBasicMaterial({
-            color: 0x559FFF,
-            transparent: true,
-            opacity: 0.4,
-            side: THREE.DoubleSide
+            color: zoneColors[zoneName],
+            transparent: true, opacity: 0.4, side: THREE.DoubleSide
         });
-    
-        pathMesh = new THREE.Mesh(geometry, material);
-        pathMesh.renderOrder = -1; // Draw before the grid
-        scene.add(pathMesh);
+
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.renderOrder = -1;
+        pathGroup.add(mesh);
     }
 
     // --- Waypoint Loading and Management ---
@@ -964,9 +1010,16 @@
         try {
             const buffer = await file.arrayBuffer();
             db = new SQL.Database(new Uint8Array(buffer));
-            const res = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='waypoints';");
-            if (res.length === 0) throw new Error("Database does not contain a 'waypoints' table.");
-           
+            
+            // --- DB Schema Migration for 'zone' column ---
+            const columns = db.exec("PRAGMA table_info(waypoints);")[0].values;
+            if (!columns.some(col => col[1] === 'zone')) {
+                db.run("ALTER TABLE waypoints ADD COLUMN zone TEXT DEFAULT 'N/A';");
+            }
+            // Ensure any old rows with NULL zone get updated to 'N/A'
+            db.run("UPDATE waypoints SET zone = 'N/A' WHERE zone IS NULL;");
+            // --- End Migration ---
+
             undoStack = [];
             redoStack = [];
             recordState(); // Record initial state
@@ -1143,13 +1196,14 @@
 
         await new Promise(resolve => setTimeout(resolve, 20));
 
-        const stmt = db.prepare("SELECT id, x, y, z, roll, pitch, yaw FROM waypoints ORDER BY id;");
+        const stmt = db.prepare("SELECT id, x, y, z, roll, pitch, yaw, zone FROM waypoints ORDER BY id;");
         const allPoints = [];
         while(stmt.step()) {
             const row = stmt.getAsObject();
             allPoints.push({
                 x: row.x, y: row.y, z: row.z, 
-                roll: row.roll, pitch: row.pitch, yaw: row.yaw
+                roll: row.roll, pitch: row.pitch, yaw: row.yaw,
+                zone: row.zone
             });
         }
         stmt.free();
@@ -1187,7 +1241,8 @@
                 const p_start_next = minIdx < allPoints.length - 1 ? new THREE.Vector3(allPoints[minIdx+1].x, allPoints[minIdx+1].y, allPoints[minIdx+1].z) : p_start.clone().lerp(p_before, -1);
                 const curve = new THREE.CatmullRomCurve3([p_before_2, p_before, p_start, p_start_next]);
                 const generatedPoints = curve.getPoints(numNewPoints + 1).slice(1);
-                const newWaypoints = generatedPoints.map(p => ({ x:p.x, y:p.y, z:p.z, roll:0, pitch:0, yaw:0 }));
+                const startZone = allPoints[minIdx].zone || 'N/A'; // Inherit zone from the start of the moved segment
+                const newWaypoints = generatedPoints.map(p => ({ x:p.x, y:p.y, z:p.z, roll:0, pitch:0, yaw:0, zone: startZone }));
                 newPointsList.splice(minIdx + insertOffset, 0, ...newWaypoints);
                 insertOffset += numNewPoints;
             }
@@ -1219,7 +1274,8 @@
                 const p_after_2 = maxIdx < allPoints.length - 2 ? new THREE.Vector3(allPoints[maxIdx+2].x, allPoints[maxIdx+2].y, allPoints[maxIdx+2].z) : p_after.clone().lerp(p_end, -1);
                 const curve = new THREE.CatmullRomCurve3([p_end_prev, p_end, p_after, p_after_2]);
                 const generatedPoints = curve.getPoints(numNewPoints + 1).slice(1);
-                const newWaypoints = generatedPoints.map(p => ({ x:p.x, y:p.y, z:p.z, roll:0, pitch:0, yaw:0 }));
+                const endZone = allPoints[maxIdx].zone || 'N/A'; // Inherit zone from the end of the moved segment
+                const newWaypoints = generatedPoints.map(p => ({ x:p.x, y:p.y, z:p.z, roll:0, pitch:0, yaw:0, zone: endZone }));
                 newPointsList.splice(maxIdx + insertOffset + 1, 0, ...newWaypoints);
             }
         }
@@ -1229,9 +1285,9 @@
             try {
                 db.run("BEGIN TRANSACTION");
                 db.run("DELETE FROM waypoints");
-                const insertStmt = db.prepare("INSERT INTO waypoints (x, y, z, roll, pitch, yaw) VALUES (?, ?, ?, ?, ?, ?)");
+                const insertStmt = db.prepare("INSERT INTO waypoints (x, y, z, roll, pitch, yaw, zone) VALUES (?, ?, ?, ?, ?, ?, ?)");
                 for(const point of newPointsList) {
-                    insertStmt.run([point.x, point.y, point.z, point.roll, point.pitch, point.yaw]);
+                    insertStmt.run([point.x, point.y, point.z, point.roll, point.pitch, point.yaw, point.zone || 'N/A']);
                 }
                 insertStmt.free();
                 db.run("COMMIT");
@@ -1264,7 +1320,11 @@
 
     function clearSelection() { 
         selectedIndices.clear(); 
-        pathSelectionStartIndex = null; 
+        pathSelectionStartIndex = null;
+        if (editSubMode === 'zone') {
+            zoneStartIndex = null;
+            updateZonePanel();
+        }
         updateAllColors(); 
         updateInfoPanel();
         clearAllGhostPreviews();
@@ -1276,11 +1336,11 @@
         const colors = new Float32Array(positions.count * 3); 
         const selectedColor = new THREE.Color(0xff8800); 
         const defaultColor = new THREE.Color(0xffff00); 
-        const pathStartColor = new THREE.Color(0x00ff00); 
+        const pathStartColor = new THREE.Color(0x00ff00); // Used for interpolate and zone start
        
         for (let i = 0; i < positions.count; i++) { 
             let color = defaultColor; 
-            if (i === pathSelectionStartIndex || i === movePathStartIndex) { 
+            if (i === pathSelectionStartIndex || i === movePathStartIndex || i === zoneStartIndex) { 
                 color = pathStartColor; 
             } else if (selectedIndices.has(i)) { 
                 color = selectedColor; 
@@ -1296,6 +1356,7 @@
         infoPanel.classList.toggle('visible', editSubMode === 'select' && selectedIndices.size > 0);
         interpolationPanel.classList.toggle('visible', editSubMode === 'interpolate');
         movePanel.classList.toggle('visible', editSubMode === 'move');
+        zonePanel.classList.toggle('visible', editSubMode === 'zone');
     }
 
     function updateInfoPanel() { 
@@ -1349,6 +1410,71 @@
         radialValueInput.disabled = !canInterpolate;
     }
 
+    // --- Zone Panel UI ---
+    function updateZonePanel() {
+        const infoText = document.getElementById('zone-info');
+        const nameInput = document.getElementById('zone-name-input');
+        const createBtn = document.getElementById('create-zone-btn');
+        const clearBtn = document.getElementById('clear-zone-selection-btn');
+
+        if (zoneStartIndex === null) {
+            infoText.textContent = 'Click a start waypoint to begin defining a new zone.';
+            nameInput.disabled = true;
+            createBtn.disabled = true;
+            clearBtn.style.display = 'none';
+        } else if (selectedIndices.size === 1) {
+            infoText.textContent = `Start point #${indexToDbId[zoneStartIndex]} selected. Click an end waypoint.`;
+            nameInput.disabled = true;
+            createBtn.disabled = true;
+            clearBtn.style.display = 'inline-block';
+        } else {
+            const endIdx = Array.from(selectedIndices).find(i => i !== zoneStartIndex);
+            infoText.textContent = `Zone selected from #${indexToDbId[zoneStartIndex]} to #${indexToDbId[endIdx]}. Enter a name.`;
+            nameInput.disabled = false;
+            createBtn.disabled = nameInput.value.trim() === '';
+            clearBtn.style.display = 'inline-block';
+        }
+    }
+
+    async function createZone() {
+        const name = document.getElementById('zone-name-input').value.trim();
+        if (!name || selectedIndices.size !== 2) return;
+
+        const indices = Array.from(selectedIndices).sort((a,b)=>a-b);
+        const startDbId = indexToDbId[indices[0]];
+        const endDbId = indexToDbId[indices[1]];
+
+        db.run("UPDATE waypoints SET zone = ? WHERE id >= ? AND id <= ?", [name, startDbId, endDbId]);
+        recordState();
+        await refreshWaypointsFromDB(); // Redraw points
+        await generatePathMesh(); // Redraw path with new zone color
+        clearSelection();
+    }
+    
+    function updateZoneList() {
+        const listContainer = document.getElementById('zone-list');
+        listContainer.innerHTML = '';
+        const zones = db.exec("SELECT DISTINCT zone FROM waypoints WHERE zone IS NOT NULL ORDER BY zone;");
+
+        if (zones.length > 0) {
+            zones[0].values.forEach(row => {
+                const zoneName = row[0];
+                const item = document.createElement('div');
+                item.className = 'zone-item';
+
+                const colorSwatch = document.createElement('div');
+                colorSwatch.className = 'zone-color-swatch';
+                colorSwatch.style.backgroundColor = `#${zoneColors[zoneName].toString(16).padStart(6,'0')}`;
+
+                const nameLabel = document.createElement('span');
+                nameLabel.textContent = zoneName;
+                
+                item.appendChild(colorSwatch);
+                item.appendChild(nameLabel);
+                listContainer.appendChild(item);
+            });
+        }
+    }
 
     // --- Map Display Options
     function applyMapDisplayOptions() {
@@ -1621,6 +1747,18 @@
                         selectedIndices.add(clickedIndex);
                     }
                     deleteSelectedPoints(); 
+                }
+                break;
+            case 'zone':
+                if (clickedIndex !== -1) {
+                    if (zoneStartIndex === null) {
+                        zoneStartIndex = clickedIndex;
+                        selectedIndices.add(clickedIndex);
+                    } else if (zoneStartIndex !== clickedIndex) {
+                        selectedIndices.add(clickedIndex);
+                    }
+                    updateAllColors();
+                    updateZonePanel();
                 }
                 break;
         }
@@ -1908,6 +2046,10 @@
     generatePathBtn.addEventListener('click', generatePathMesh);
     document.getElementById('linear-interpolate').addEventListener('click', linearInterpolateSelected);
     document.getElementById('generate-connections').addEventListener('click', generatePathConnections);
+    document.getElementById('create-zone-btn').addEventListener('click', createZone);
+    document.getElementById('clear-zone-selection-btn').addEventListener('click', clearSelection);
+    document.getElementById('zone-name-input').addEventListener('input', updateZonePanel);
+
    
     // Move Panel Buttons
     document.getElementById('move-select-box').addEventListener('click', () => {
@@ -2099,6 +2241,7 @@
         move: document.getElementById('edit-move'), 
         interpolate: document.getElementById('edit-interpolate'),
         delete: document.getElementById('edit-delete'), 
+        zone: document.getElementById('edit-zone'), 
     };
     const hintSpan = document.getElementById('edit-mode-hint');
 
@@ -2124,6 +2267,7 @@
                 case 'move': hintSpan.textContent = "Select points, then drag them to move."; break;
                 case 'interpolate': hintSpan.textContent = "Click start and end points of a path to interpolate."; break;
                 case 'delete': hintSpan.textContent = "Click a waypoint or a selection to delete."; break;
+                case 'zone': hintSpan.textContent = "Click start and end waypoints to define a zone."; break;
             } 
         }); 
     });
@@ -2327,4 +2471,6 @@
   </script>
 </body>
 </html>
+
+
 
