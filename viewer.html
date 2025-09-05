@@ -50,35 +50,53 @@
         color: #fff; background: rgba(0,0,0,0.7); padding: 20px; border-radius: 10px;
         z-index: 100; display: none;
     }
-    #info-panel {
-        position: fixed; top: 12px; right: -300px; width: 260px;
-        background: rgba(20,24,33,0.8); border: 1px solid rgba(255,255,255,0.08);
+    .side-panel {
+        position: fixed; top: 70px; width: 280px;
+        background: rgba(20,24,33,0.85); border: 1px solid rgba(255,255,255,0.08);
         border-radius: 10px; padding: 15px; color: #eaeefb;
-        backdrop-filter: blur(8px); transition: right 0.3s ease-in-out; z-index: 10;
+        backdrop-filter: blur(8px); transition: transform 0.3s ease-in-out, opacity 0.3s; z-index: 9;
+        transform: translateX(calc(100% + 24px));
+        opacity: 0;
+        pointer-events: none;
     }
-    #info-panel.visible { right: 12px; }
-    #info-panel h3 {
+    .side-panel.visible {
+        transform: translateX(0);
+        opacity: 1;
+        pointer-events: auto;
+    }
+    #info-panel { right: 12px; }
+    #interpolation-panel { right: 12px; }
+    #move-panel { right: 12px; }
+    #display-panel {
+        left: 12px;
+        transform: translateX(calc(-100% - 24px));
+    }
+    #display-panel.visible {
+        transform: translateX(0);
+        opacity: 1;
+        pointer-events: auto;
+    }
+    .side-panel h3 {
         margin-top: 0; margin-bottom: 15px; color: #fff; font-weight: 500;
         border-bottom: 1px solid #3a4150; padding-bottom: 10px;
     }
-    .info-grid {
-        display: grid; grid-template-columns: 50px 1fr; gap: 8px; font-size: 14px;
+    .panel-info-text {
+        font-size: 13px; color: #9fb0d0; margin-top: -10px; margin-bottom: 15px;
+        background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px;
     }
-    .info-grid label {
+    .control-grid {
+        display: grid; grid-template-columns: 100px 1fr; gap: 12px; font-size: 14px; align-items: center;
+    }
+    .control-grid label {
         font-weight: 500; color: #9fb0d0; background: none; border: none; padding: 0;
     }
-    .info-grid span {
+    .control-grid span, .control-grid input, .control-grid select {
         font-family: monospace; background: #0b0e14; padding: 4px 8px;
-        border-radius: 4px; color: #c8d3f5;
+        border-radius: 4px; color: #c8d3f5; border: 1px solid #3a4150;
     }
-    #edit-toolbar {
-        display: none; /* Hidden by default */
-        gap: 8px;
-    }
-    #edit-toolbar button.active {
-        background-color: #5476ff;
-        border-color: #839eff;
-    }
+    .control-grid button { width: 100%; justify-content: center; }
+    #edit-toolbar { display: none; gap: 8px; }
+    #edit-toolbar button.active { background-color: #5476ff; border-color: #839eff; }
     #camera-mode-indicator {
         position: fixed; bottom: 45px; left: 50%;
         transform: translateX(-50%);
@@ -86,14 +104,24 @@
         padding: 8px 14px; border-radius: 8px; font-size: 14px;
         font-weight: 500; z-index: 20; display: none; backdrop-filter: blur(6px);
     }
+    #selection-box {
+      position: fixed;
+      background: rgba(84, 118, 255, 0.2);
+      border: 1px solid rgba(131, 158, 255, 0.8);
+      pointer-events: none;
+      display: none;
+      z-index: 1000;
+    }
   </style>
 </head>
 <body>
   <div id="app"></div>
+  <div id="selection-box"></div>
 
   <div id="ui">
     <label for="map-file">Open Map (.ply/.pcd)</label>
     <input id="map-file" type="file" accept=".ply,.pcd" />
+    <button id="display-toggle">Display Tools</button>
     <span style="border-left: 1px solid #444; margin: 0 4px;"></span>
     <label for="waypoint-file">Open Waypoints (.db)</label>
     <input id="waypoint-file" type="file" accept=".db,.sqlite" />
@@ -103,9 +131,13 @@
     <button id="edit" disabled>Toggle Edit Mode</button>
     <div id="edit-toolbar">
         <button id="edit-add">Add</button>
-        <button id="edit-move">Move</button>
-        <button id="edit-delete">Delete</button>
         <button id="edit-select" class="active">Select</button>
+        <button id="edit-move">Move</button>
+        <button id="edit-interpolate">Interpolate</button>
+        <button id="edit-delete">Delete</button>
+        <span style="border-left: 1px solid #444; margin: 0 4px;"></span>
+        <button id="edit-undo" disabled>Undo</button>
+        <button id="edit-redo" disabled>Redo</button>
     </div>
     <select id="view-select">
       <option value="perspective">Perspective View</option>
@@ -116,28 +148,75 @@
     <button id="lock-rotation">Lock Rotation</button>
   </div>
   
-  <div id="loader">Loading Waypoints...</div>
+  <div id="loader">Loading...</div>
 
-  <div id="info-panel">
+  <div id="info-panel" class="side-panel">
     <h3>Selected Waypoint</h3>
-    <div class="info-grid">
-      <label>X:</label> <span id="info-x">0.00</span>
-      <label>Y:</label> <span id="info-y">0.00</span>
-      <label>Z:</label> <span id="info-z">0.00</span>
+    <div class="control-grid">
+      <label>X:</label> <span id="info-x">---</span>
+      <label>Y:</label> <span id="info-y">---</span>
+      <label>Z:</label> <span id="info-z">---</span>
     </div>
     <h3 style="margin-top: 15px;">Orientation</h3>
-    <div class="info-grid">
-      <label>Roll:</label> <span id="info-roll">0.00</span>
-      <label>Pitch:</label> <span id="info-pitch">0.00</span>
-      <label>Yaw:</label> <span id="info-yaw">0.00</span>
+    <div class="control-grid">
+      <label>Roll:</label> <span id="info-roll">---</span>
+      <label>Pitch:</label> <span id="info-pitch">---</span>
+      <label>Yaw:</label> <span id="info-yaw">---</span>
     </div>
+  </div>
+
+  <div id="interpolation-panel" class="side-panel">
+      <h3>Interpolation Tools</h3>
+      <p id="interpolation-info" class="panel-info-text">Click a start and end point on the path to begin.</p>
+      <div class="control-grid">
+          <button id="linear-interpolate" style="grid-column: 1 / -1;" disabled>Linear Interpolate</button>
+          <label style="grid-column: 1 / -1; margin-top: 8px; margin-bottom: -4px; color: #fff; background: none; border: none; padding: 0;">Curve (Radial)</label>
+          <div style="grid-column: 1 / -1; display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center;">
+            <input type="range" id="radial-strength" min="-15" max="15" step="0.1" value="3" disabled>
+            <input type="number" id="radial-strength-value" min="-15" max="15" step="0.01" value="3" style="width: 70px; -moz-appearance: textfield;" disabled>
+          </div>
+          <small style="grid-column: 1 / -1; font-size: 11px; color: #9fb0d0; margin-top: -8px;">Changes are applied on release.</small>
+      </div>
+  </div>
+
+  <div id="move-panel" class="side-panel">
+    <h3>Move Tool</h3>
+    <p id="move-info" class="panel-info-text">Click and drag a selected point to move. If multiple points are selected, they will all move together.</p>
+    <h3 style="margin-top:20px; margin-bottom:10px; border:none; padding:0;">Selection Tools</h3>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+        <button id="move-select-box">Select Box</button>
+        <button id="move-select-path">Select Path</button>
+    </div>
+    <h3 style="margin-top:20px; margin-bottom:10px; border:none; padding:0;">Path Tools</h3>
+    <div style="display:flex; flex-direction:column; gap: 4px;">
+      <button id="generate-connections" style="width:100%;" disabled>Generate Path Connections</button>
+      <small style="font-size: 11px; color: #9fb0d0;">After moving points, generate a smooth transition to their neighbors.</small>
+    </div>
+  </div>
+
+  <div id="display-panel" class="side-panel">
+      <h3>Display Tools</h3>
+      <div class="control-grid">
+          <label>Map Point Size</label>
+          <input type="range" id="map-point-size" min="0.1" max="10" step="0.1" value="0.5">
+          <label>Waypoint Size</label>
+          <input type="range" id="waypoint-size" min="0.01" max="0.5" step="0.005" value="0.05">
+          <label>Color</label>
+          <select id="color-mode">
+              <option value="default">Default</option>
+              <option value="height">Height (Z)</option>
+              <option value="range">Range from Origin</option>
+          </select>
+          <label>Voxel Size</label>
+          <input type="range" id="voxel-size" min="0" max="0.5" step="0.01" value="0">
+      </div>
   </div>
 
   <div id="hint" class="hint-bar">
     Orbit: Left-drag • Pan: Right-drag • Zoom: Wheel
   </div>
   <div id="hint-edit" class="hint-bar" style="display:none;">
-    <span id="edit-mode-hint">Click a start and end point to select a path.</span> <b>Hold Ctrl for camera.</b>
+    <span id="edit-mode-hint">Select points by clicking or dragging a box.</span> <b>Hold Ctrl for camera.</b>
   </div>
   <div id="camera-mode-indicator"></div>
 
@@ -167,29 +246,72 @@
     const gridHelper = new THREE.GridHelper(10, 20, 0x3d4a66, 0x202838);
     gridHelper.rotation.x = Math.PI / 2;
     scene.add(gridHelper);
+    
+    // --- Hover Indicator ---
+    const hoverRingGeo = new THREE.RingGeometry(1, 1.2, 32);
+    const hoverRingMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, side: THREE.DoubleSide, transparent: true, opacity: 0.8, depthTest: false });
+    const hoverIndicator = new THREE.Mesh(hoverRingGeo, hoverRingMat);
+    hoverIndicator.visible = false;
+    scene.add(hoverIndicator);
+    let hoveredPointIndex = null;
 
     // --- App State ---
+    const mapOffset = new THREE.Vector3();
     let mapObject = null;
     let waypointsObject = null;
+    let originalMapGeometry = null;
     let editMode = false;
-    let editSubMode = 'select';
+    let editSubMode = 'select'; // Default to select mode
+    let moveSubMode = 'drag'; // 'drag', 'box-select', 'path-select'
+    let movePathStartIndex = null;
     let selectedIndices = new Set();
-    let isDragging = false;
+    let isDraggingPoint = false;
+    let dragStartIndex = -1;
+    let dragStartOffset = new THREE.Vector3();
+    let dragStartPositions = new Map();
     let isRotationLocked = false; 
     let isCameraOverrideActive = false;
     let indexToDbId = [];
     let dynamicPointSize = 0.05;
-    let pathSelectionStartIndex = null; // NEW
+    let pathSelectionStartIndex = null;
+    let lastMovedIndices = null;
+    let transientGhostObject = null;
+    let persistentGhostObject = null;
+    let undoStack = [];
+    let redoStack = [];
+    const MAX_HISTORY = 50;
+    
+    // Interpolation State
+    let interpolationOriginalPositions = new Map();
+
+    // Marquee Selection State
+    let isMarqueeSelecting = false;
+    const selectionBox = document.getElementById('selection-box');
+    const marqueeStart = new THREE.Vector2();
+    const marqueeEnd = new THREE.Vector2();
     
     const raycaster = new THREE.Raycaster();
     raycaster.params.Points.threshold = 0.05;
     const pointer = new THREE.Vector2();
     const raycastPlane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
     const infoPanel = document.getElementById('info-panel');
+    const interpolationPanel = document.getElementById('interpolation-panel');
+    const movePanel = document.getElementById('move-panel');
     const hintMain = document.getElementById('hint');
+    const displayPanel = document.getElementById('display-panel');
     const editToolbar = document.getElementById('edit-toolbar');
     const cameraModeIndicator = document.getElementById('camera-mode-indicator');
-    let dragStart3D, initialDragPositions;
+
+    // --- Coordinate System Transformations ---
+    // ROS (x-fwd, y-left, z-up) to Three.js (y-fwd, x-right, z-up)
+    function rosToThree(v) {
+        return new THREE.Vector3(-v.y, v.x, v.z);
+    }
+    // Three.js to ROS
+    function threeToRos(v) {
+        return new THREE.Vector3(v.y, -v.x, v.z);
+    }
+
 
     // --- Database Setup ---
     let db = null;
@@ -200,10 +322,147 @@
           x REAL NOT NULL, y REAL NOT NULL, z REAL NOT NULL,
           roll REAL DEFAULT 0, pitch REAL DEFAULT 0, yaw REAL DEFAULT 0
       );`;
-
+      
     async function initDatabase() {
         SQL = await initSqlJs({ locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/${file}` });
     }
+
+    // --- Undo/Redo and State Management ---
+    const undoBtn = document.getElementById('edit-undo');
+    const redoBtn = document.getElementById('edit-redo');
+
+    function updateUndoRedoButtons() {
+        undoBtn.disabled = undoStack.length < 2;
+        redoBtn.disabled = redoStack.length === 0;
+    }
+
+    function recordState() {
+        if (!db) return;
+        clearPersistentGhostPreview();
+        redoStack = [];
+        const dbState = db.export();
+        undoStack.push(dbState);
+        if (undoStack.length > MAX_HISTORY) {
+            undoStack.shift();
+        }
+        updateUndoRedoButtons();
+    }
+
+    async function undo() {
+        if (undoStack.length < 2) return;
+        const currentState = undoStack.pop();
+        redoStack.push(currentState);
+        
+        const prevState = undoStack[undoStack.length - 1];
+        if (db) db.close();
+        db = new SQL.Database(new Uint8Array(prevState));
+        
+        await refreshWaypointsFromDB();
+        clearAllGhostPreviews();
+        updateUndoRedoButtons();
+    }
+
+    async function redo() {
+        if (redoStack.length === 0) return;
+        const nextState = redoStack.pop();
+        undoStack.push(nextState);
+
+        if (db) db.close();
+        db = new SQL.Database(new Uint8Array(nextState));
+
+        await refreshWaypointsFromDB();
+        clearAllGhostPreviews();
+        updateUndoRedoButtons();
+    }
+
+    // --- Ghost Preview System ---
+    function createTransientGhostPreview() {
+        clearTransientGhostPreview();
+        const indices = Array.from(selectedIndices);
+        if (indices.length === 0 || !waypointsObject) return;
+
+        const positions = waypointsObject.geometry.attributes.position;
+        const ghostPositions = [];
+        for (const index of indices) {
+            ghostPositions.push(positions.getX(index), positions.getY(index), positions.getZ(index));
+        }
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(ghostPositions, 3));
+        const material = new THREE.PointsMaterial({
+            size: camera.isPerspectiveCamera ? dynamicPointSize : (dynamicPointSize / 0.05 * 3.0),
+            sizeAttenuation: camera.isPerspectiveCamera,
+            color: 0x8888ff,
+            transparent: true,
+            opacity: 0.4
+        });
+        transientGhostObject = new THREE.Points(geometry, material);
+        scene.add(transientGhostObject);
+    }
+
+    function clearTransientGhostPreview() {
+        if (transientGhostObject) {
+            scene.remove(transientGhostObject);
+            transientGhostObject.geometry.dispose();
+            transientGhostObject.material.dispose();
+            transientGhostObject = null;
+        }
+    }
+    
+    async function createPersistentGhostPreview() {
+        clearPersistentGhostPreview();
+        const indices = Array.from(selectedIndices);
+        if (indices.length === 0 || undoStack.length === 0) return;
+
+        const prevState = undoStack[undoStack.length - 1];
+        const tempDb = new SQL.Database(new Uint8Array(prevState));
+        const stmt = tempDb.prepare("SELECT x, y, z FROM waypoints ORDER BY id;");
+        
+        const allOldPositions = [];
+        while (stmt.step()) {
+            const row = stmt.get();
+            const transformed = rosToThree({x: row[0], y: row[1], z: row[2]});
+            allOldPositions.push(transformed.x - mapOffset.x, transformed.y - mapOffset.y, transformed.z - mapOffset.z);
+        }
+        stmt.free();
+        tempDb.close();
+
+        const ghostPositions = [];
+        for (const index of indices) {
+            if (index * 3 < allOldPositions.length) {
+                ghostPositions.push(allOldPositions[index * 3], allOldPositions[index * 3 + 1], allOldPositions[index * 3 + 2]);
+            }
+        }
+        
+        if (ghostPositions.length === 0) return;
+
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(ghostPositions, 3));
+        const material = new THREE.PointsMaterial({
+            size: camera.isPerspectiveCamera ? dynamicPointSize * 0.8 : (dynamicPointSize / 0.05 * 2.0),
+            sizeAttenuation: camera.isPerspectiveCamera,
+            color: 0x3377ff, 
+            transparent: true,
+            opacity: 0.7
+        });
+        persistentGhostObject = new THREE.Points(geometry, material);
+        scene.add(persistentGhostObject);
+    }
+    
+    function clearPersistentGhostPreview() {
+        if (persistentGhostObject) {
+            scene.remove(persistentGhostObject);
+            persistentGhostObject.geometry.dispose();
+            persistentGhostObject.material.dispose();
+            persistentGhostObject = null;
+        }
+    }
+
+    function clearAllGhostPreviews() {
+        clearTransientGhostPreview();
+        clearPersistentGhostPreview();
+    }
+
 
     // --- Waypoint Loading and Management ---
     function clearVisualWaypoints() {
@@ -216,39 +475,60 @@
         clearSelection();
         indexToDbId = [];
     }
+    
+    function updateWaypointVisuals() {
+        if (!waypointsObject || !camera) return;
+        
+        const perspectiveSize = dynamicPointSize;
+        const orthoBaseSize = 3.0;
+        const defaultDynamicSize = 0.05;
+        const orthoSize = orthoBaseSize * (dynamicPointSize / defaultDynamicSize);
+
+        waypointsObject.material.size = camera.isPerspectiveCamera ? perspectiveSize : orthoSize;
+        waypointsObject.material.sizeAttenuation = camera.isPerspectiveCamera;
+        waypointsObject.material.needsUpdate = true;
+    }
 
     async function refreshWaypointsFromDB() {
+        const oldSelectionDbIds = new Set(Array.from(selectedIndices).map(i => indexToDbId[i]));
         clearVisualWaypoints();
         if (!db) return;
 
-        const stmt = db.prepare("SELECT id, x, y, z FROM waypoints;");
+        const stmt = db.prepare("SELECT id, x, y, z FROM waypoints ORDER BY id;"); 
         const positions = [];
         indexToDbId = [];
+        const dbIdToIndex = new Map();
 
         while (stmt.step()) {
             const row = stmt.get();
+            const currentIndex = indexToDbId.length;
             indexToDbId.push(row[0]);
-            positions.push(row[1], row[2], row[3]);
+            dbIdToIndex.set(row[0], currentIndex);
+            const transformed = rosToThree({x: row[1], y: row[2], z: row[3]});
+            positions.push(transformed.x - mapOffset.x, transformed.y - mapOffset.y, transformed.z - mapOffset.z);
         }
         stmt.free();
+        
+        if (positions.length === 0) return;
 
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
         
-        const material = new THREE.PointsMaterial({
-            size: dynamicPointSize,
-            vertexColors: true, 
-        });
-
+        const material = new THREE.PointsMaterial({ size: dynamicPointSize, vertexColors: true });
         waypointsObject = new THREE.Points(geometry, material);
+        
+        // Restore selection
+        selectedIndices.clear();
+        for (const dbId of oldSelectionDbIds) {
+            if (dbIdToIndex.has(dbId)) {
+                selectedIndices.add(dbIdToIndex.get(dbId));
+            }
+        }
+        
         updateAllColors();
         scene.add(waypointsObject);
-        
-        if (waypointsObject && camera) {
-            waypointsObject.material.size = camera.isPerspectiveCamera ? dynamicPointSize : 3.0;
-            waypointsObject.material.sizeAttenuation = camera.isPerspectiveCamera;
-            waypointsObject.material.needsUpdate = true;
-        }
+        updateWaypointVisuals();
+        updateInfoPanel();
     }
 
     async function loadWaypointsFromFile(file) {
@@ -264,6 +544,10 @@
             db = new SQL.Database(new Uint8Array(buffer));
             const res = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='waypoints';");
             if (res.length === 0) throw new Error("Database does not contain a 'waypoints' table.");
+            
+            undoStack = [];
+            redoStack = [];
+            recordState();
         } catch (err) {
             alert(`Error loading database: ${err.message}`);
             db = null;
@@ -282,6 +566,9 @@
         
         db = new SQL.Database();
         db.run(WAYPOINT_TABLE_SQL);
+        undoStack = [];
+        redoStack = [];
+        recordState();
         refreshWaypointsFromDB();
         updateButtonState();
     }
@@ -300,108 +587,503 @@
     // --- Point Manipulation ---
     async function addPoint(position) {
         if (!db) return;
-        db.run("INSERT INTO waypoints (x, y, z) VALUES (?, ?, ?)", [position.x, position.y, position.z]);
+        recordState();
+        const threePos = position.clone().add(mapOffset);
+        const rosPos = threeToRos(threePos);
+        db.run("INSERT INTO waypoints (x, y, z, roll, pitch, yaw) VALUES (?, ?, ?, 0, 0, 0)", [rosPos.x, rosPos.y, rosPos.z]);
         await refreshWaypointsFromDB();
     }
+        
+    async function batchUpdateDbPositions(indicesToUpdate, newPositions) {
+        if (!db || !waypointsObject) return;
+        
+        try {
+            db.run("BEGIN TRANSACTION");
+            for (let i = 0; i < indicesToUpdate.length; i++) {
+                const index = indicesToUpdate[i];
+                const db_id = indexToDbId[index];
+                const threePos = newPositions[i].clone().add(mapOffset);
+                const rosPos = threeToRos(threePos);
+                db.run("UPDATE waypoints SET x = ?, y = ?, z = ? WHERE id = ?", [rosPos.x, rosPos.y, rosPos.z, db_id]);
+            }
+            db.run("COMMIT");
+        } catch (e) {
+            console.error("Batch DB update failed, rolling back.", e);
+            db.run("ROLLBACK");
+        }
+    }
 
-    function updatePointsInDb(positionsMap) {
+
+    async function linearInterpolateSelected() {
+        const indices = Array.from(selectedIndices).sort((a, b) => a - b);
+        if (indices.length < 3) return; 
+        
+        recordState();
+        createPersistentGhostPreview();
+
+        const positions = waypointsObject.geometry.attributes.position;
+        const startIdx = indices[0];
+        const endIdx = indices[indices.length - 1];
+
+        const pStart = new THREE.Vector3().fromBufferAttribute(positions, startIdx);
+        const pEnd = new THREE.Vector3().fromBufferAttribute(positions, endIdx);
+
+        const intermediaryIndices = [];
+        const newPositions = [];
+        for (let i = 1; i < indices.length - 1; i++) {
+            const currentIdx = indices[i];
+            const t = (currentIdx - startIdx) / (endIdx - startIdx);
+            const newPos = pStart.clone().lerp(pEnd, t);
+            positions.setXYZ(currentIdx, newPos.x, newPos.y, newPos.z);
+            intermediaryIndices.push(currentIdx);
+            newPositions.push(newPos);
+        }
+
+        positions.needsUpdate = true;
+        await batchUpdateDbPositions(intermediaryIndices, newPositions);
+    }
+
+    async function performRadialInterpolation(saveToDb = false) {
+        const indices = Array.from(selectedIndices).sort((a, b) => a - b);
+        if (indices.length < 3) return;
+
+        const positions = waypointsObject.geometry.attributes.position;
+        const startIdx = indices[0];
+        const endIdx = indices[indices.length - 1];
+        
+        const p0 = new THREE.Vector3().fromBufferAttribute(positions, startIdx);
+        const p3 = new THREE.Vector3().fromBufferAttribute(positions, endIdx);
+
+        const prevIdx = startIdx > 0 ? startIdx - 1 : 0;
+        const p_minus_1 = new THREE.Vector3().fromBufferAttribute(positions, prevIdx);
+        
+        const nextIdx = endIdx < positions.count - 1 ? endIdx + 1 : endIdx;
+        const p_plus_1 = new THREE.Vector3().fromBufferAttribute(positions, nextIdx);
+
+        const strength = parseFloat(document.getElementById('radial-strength').value);
+        const tension = 0.35;
+
+        const tangentDir0 = p3.clone().sub(p_minus_1).normalize();
+        const tangentDir1 = p_plus_1.clone().sub(p0).normalize();
+
+        const chord = p3.clone().sub(p0);
+        const handleMagnitude = chord.length() * tension;
+        if (handleMagnitude < 1e-6) return;
+
+        let p1 = p0.clone().add(tangentDir0.multiplyScalar(handleMagnitude));
+        let p2 = p3.clone().sub(tangentDir1.multiplyScalar(handleMagnitude));
+
+        const perp = new THREE.Vector3(-chord.y, chord.x, 0).normalize();
+        const offsetVector = perp.multiplyScalar(strength);
+
+        p1.add(offsetVector);
+        p2.add(offsetVector);
+
+        const intermediaryIndices = [];
+        const newPositions = [];
+        for (let i = 1; i < indices.length - 1; i++) {
+            const currentIdx = indices[i];
+            const t = (currentIdx - startIdx) / (endIdx - startIdx);
+            
+            const t_inv = 1 - t;
+            const c0 = t_inv * t_inv * t_inv;
+            const c1 = 3 * t_inv * t_inv * t;
+            const c2 = 3 * t_inv * t * t;
+            const c3 = t * t * t;
+            
+            const newPos = p0.clone().multiplyScalar(c0)
+                .add(p1.clone().multiplyScalar(c1))
+                .add(p2.clone().multiplyScalar(c2))
+                .add(p3.clone().multiplyScalar(c3));
+            
+            positions.setXYZ(currentIdx, newPos.x, newPos.y, newPos.z);
+            intermediaryIndices.push(currentIdx);
+            newPositions.push(newPos);
+        }
+
+        positions.needsUpdate = true;
+        
+        if (saveToDb) {
+            await batchUpdateDbPositions(intermediaryIndices, newPositions);
+        }
+    }
+    
+    async function generatePathConnections() {
+        if (!lastMovedIndices || lastMovedIndices.size < 1) return;
         if (!db) return;
-        const stmt = db.prepare("UPDATE waypoints SET x = ?, y = ?, z = ? WHERE id = ?");
-        for (const [id, pos] of positionsMap.entries()) {
-            stmt.run([pos.x, pos.y, pos.z, id]);
+
+        document.getElementById('loader').textContent = 'Generating Path...';
+        document.getElementById('loader').style.display = 'block';
+        Object.values(editModeButtons).forEach(btn => btn.disabled = true);
+        undoBtn.disabled = true;
+        redoBtn.disabled = true;
+
+        await new Promise(resolve => setTimeout(resolve, 20));
+
+        recordState();
+        
+        const stmt = db.prepare("SELECT id, x, y, z, roll, pitch, yaw FROM waypoints ORDER BY id;");
+        const allPoints = [];
+        while(stmt.step()) {
+            const row = stmt.getAsObject();
+            allPoints.push({
+                x: row.x, y: row.y, z: row.z, 
+                roll: row.roll, pitch: row.pitch, yaw: row.yaw
+            });
         }
         stmt.free();
-    }
+        
+        const movedIdxs = Array.from(lastMovedIndices).sort((a,b) => a - b);
+        const minIdx = movedIdxs[0];
+        const maxIdx = movedIdxs[movedIdxs.length - 1];
 
-    async function deleteSelectedPoints() {
-        if (!db || selectedIndices.size === 0) return;
-        const idsToDelete = Array.from(selectedIndices).map(index => indexToDbId[index]);
-        if (idsToDelete.length === 0) return;
-        const placeholders = idsToDelete.map(() => '?').join(',');
-        db.run(`DELETE FROM waypoints WHERE id IN (${placeholders})`, idsToDelete);
+        const newPointsList = [...allPoints];
+        let insertOffset = 0;
+
+        // Generate start connection
+        if (minIdx > 0) {
+            const distances = [];
+            if (minIdx > 1) {
+                const p1 = new THREE.Vector3(allPoints[minIdx-2].x, allPoints[minIdx-2].y, allPoints[minIdx-2].z);
+                const p2 = new THREE.Vector3(allPoints[minIdx-1].x, allPoints[minIdx-1].y, allPoints[minIdx-1].z);
+                distances.push(p1.distanceTo(p2));
+            }
+            if (minIdx < allPoints.length -1) {
+                 const p1 = new THREE.Vector3(allPoints[minIdx].x, allPoints[minIdx].y, allPoints[minIdx].z);
+                 const p2 = new THREE.Vector3(allPoints[minIdx+1].x, allPoints[minIdx+1].y, allPoints[minIdx+1].z);
+                 distances.push(p1.distanceTo(p2));
+            }
+            const localAvgDist = distances.length > 0 ? distances.reduce((a,b) => a + b, 0) / distances.length : 1.0;
+
+            const p_before = new THREE.Vector3(allPoints[minIdx-1].x, allPoints[minIdx-1].y, allPoints[minIdx-1].z);
+            const p_start = new THREE.Vector3(allPoints[minIdx].x, allPoints[minIdx].y, allPoints[minIdx].z);
+            
+            const dist = p_before.distanceTo(p_start);
+            const numNewPoints = Math.max(0, Math.round(dist / localAvgDist) - 1);
+
+            if (numNewPoints > 0) {
+                const p_before_2 = minIdx > 1 ? new THREE.Vector3(allPoints[minIdx-2].x, allPoints[minIdx-2].y, allPoints[minIdx-2].z) : p_before.clone().lerp(p_start, -1);
+                const p_start_next = minIdx < allPoints.length - 1 ? new THREE.Vector3(allPoints[minIdx+1].x, allPoints[minIdx+1].y, allPoints[minIdx+1].z) : p_start.clone().lerp(p_before, -1);
+                const curve = new THREE.CatmullRomCurve3([p_before_2, p_before, p_start, p_start_next]);
+                const generatedPoints = curve.getPoints(numNewPoints + 1).slice(1);
+                const newWaypoints = generatedPoints.map(p => ({ x:p.x, y:p.y, z:p.z, roll:0, pitch:0, yaw:0 }));
+                newPointsList.splice(minIdx + insertOffset, 0, ...newWaypoints);
+                insertOffset += numNewPoints;
+            }
+        }
+        
+        // Generate end connection
+        if (maxIdx < allPoints.length - 1) {
+            const distances = [];
+            if (maxIdx > 0) {
+                const p1 = new THREE.Vector3(allPoints[maxIdx-1].x, allPoints[maxIdx-1].y, allPoints[maxIdx-1].z);
+                const p2 = new THREE.Vector3(allPoints[maxIdx].x, allPoints[maxIdx].y, allPoints[maxIdx].z);
+                distances.push(p1.distanceTo(p2));
+            }
+            if (maxIdx < allPoints.length - 2) {
+                 const p1 = new THREE.Vector3(allPoints[maxIdx+1].x, allPoints[maxIdx+1].y, allPoints[maxIdx+1].z);
+                 const p2 = new THREE.Vector3(allPoints[maxIdx+2].x, allPoints[maxIdx+2].y, allPoints[maxIdx+2].z);
+                 distances.push(p1.distanceTo(p2));
+            }
+            const localAvgDist = distances.length > 0 ? distances.reduce((a,b) => a + b, 0) / distances.length : 1.0;
+
+            const p_end = new THREE.Vector3(allPoints[maxIdx].x, allPoints[maxIdx].y, allPoints[maxIdx].z);
+            const p_after = new THREE.Vector3(allPoints[maxIdx+1].x, allPoints[maxIdx+1].y, allPoints[maxIdx+1].z);
+            
+            const dist = p_end.distanceTo(p_after);
+            const numNewPoints = Math.max(0, Math.round(dist / localAvgDist) - 1);
+            
+            if (numNewPoints > 0) {
+                const p_end_prev = maxIdx > 0 ? new THREE.Vector3(allPoints[maxIdx-1].x, allPoints[maxIdx-1].y, allPoints[maxIdx-1].z) : p_end.clone().lerp(p_after, -1);
+                const p_after_2 = maxIdx < allPoints.length - 2 ? new THREE.Vector3(allPoints[maxIdx+2].x, allPoints[maxIdx+2].y, allPoints[maxIdx+2].z) : p_after.clone().lerp(p_end, -1);
+                const curve = new THREE.CatmullRomCurve3([p_end_prev, p_end, p_after, p_after_2]);
+                const generatedPoints = curve.getPoints(numNewPoints + 1).slice(1);
+                const newWaypoints = generatedPoints.map(p => ({ x:p.x, y:p.y, z:p.z, roll:0, pitch:0, yaw:0 }));
+                newPointsList.splice(maxIdx + insertOffset + 1, 0, ...newWaypoints);
+            }
+        }
+
+        // Update database
+        if (newPointsList.length !== allPoints.length) {
+            try {
+                db.run("BEGIN TRANSACTION");
+                db.run("DELETE FROM waypoints");
+                const insertStmt = db.prepare("INSERT INTO waypoints (x, y, z, roll, pitch, yaw) VALUES (?, ?, ?, ?, ?, ?)");
+                for(const point of newPointsList) {
+                    insertStmt.run([point.x, point.y, point.z, point.roll, point.pitch, point.yaw]);
+                }
+                insertStmt.free();
+                db.run("COMMIT");
+            } catch (e) {
+                console.error("Connection generation failed:", e);
+                db.run("ROLLBACK");
+            }
+        }
+
+        document.getElementById('generate-connections').disabled = true;
+        lastMovedIndices = null;
         await refreshWaypointsFromDB();
+
+        document.getElementById('loader').style.display = 'none';
+        Object.values(editModeButtons).forEach(btn => btn.disabled = false);
+        updateUndoRedoButtons();
     }
 
-    function clearSelection() {
-        selectedIndices.clear();
-        pathSelectionStartIndex = null;
-        updateAllColors();
+
+    async function deleteSelectedPoints() { 
+        if (!db || selectedIndices.size === 0) return; 
+        recordState();
+        const idsToDelete = Array.from(selectedIndices).map(index => indexToDbId[index]); 
+        if (idsToDelete.length === 0) return; 
+        const placeholders = idsToDelete.map(() => '?').join(','); 
+        db.run(`DELETE FROM waypoints WHERE id IN (${placeholders})`, idsToDelete);
+        clearSelection();
+        await refreshWaypointsFromDB(); 
+    }
+
+    function clearSelection() { 
+        selectedIndices.clear(); 
+        pathSelectionStartIndex = null; 
+        updateAllColors(); 
         updateInfoPanel();
+        clearAllGhostPreviews();
     }
-    
-    function updateAllColors() {
-        if (!waypointsObject) return;
-        const positions = waypointsObject.geometry.attributes.position;
-        const colors = new Float32Array(positions.count * 3);
-        const selectedColor = new THREE.Color(0xff8800); // Orange
-        const defaultColor = new THREE.Color(0xffff00); // Yellow
-        const startColor = new THREE.Color(0x00ff00); // Green
 
-        for (let i = 0; i < positions.count; i++) {
-            let color = defaultColor;
-            if (i === pathSelectionStartIndex) {
-                color = startColor;
-            } else if (selectedIndices.has(i)) {
-                color = selectedColor;
-            }
-            colors[i * 3] = color.r;
-            colors[i * 3 + 1] = color.g;
-            colors[i * 3 + 2] = color.b;
+    function updateAllColors() { 
+        if (!waypointsObject) return; 
+        const positions = waypointsObject.geometry.attributes.position; 
+        const colors = new Float32Array(positions.count * 3); 
+        const selectedColor = new THREE.Color(0xff8800); 
+        const defaultColor = new THREE.Color(0xffff00); 
+        const pathStartColor = new THREE.Color(0x00ff00); 
+        
+        for (let i = 0; i < positions.count; i++) { 
+            let color = defaultColor; 
+            if (i === pathSelectionStartIndex || i === movePathStartIndex) { 
+                color = pathStartColor; 
+            } else if (selectedIndices.has(i)) { 
+                color = selectedColor; 
+            } 
+            colors[i * 3] = color.r; 
+            colors[i * 3 + 1] = color.g; 
+            colors[i * 3 + 2] = color.b; 
+        } 
+        waypointsObject.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3)); 
+    }
+
+    function updateActivePanels() {
+        infoPanel.classList.toggle('visible', editSubMode === 'select' && selectedIndices.size > 0);
+        interpolationPanel.classList.toggle('visible', editSubMode === 'interpolate');
+        movePanel.classList.toggle('visible', editSubMode === 'move');
+    }
+
+    function updateInfoPanel() { 
+        updateActivePanels();
+        document.getElementById('move-info').textContent = selectedIndices.size > 0 ? `${selectedIndices.size} points selected.` : `Select points to move.`;
+
+        if (selectedIndices.size === 1) { 
+            const index = selectedIndices.values().next().value; 
+            const db_id = indexToDbId[index]; 
+            const stmt = db.prepare("SELECT x, y, z, roll, pitch, yaw FROM waypoints WHERE id = :id"); 
+            const result = stmt.getAsObject({':id': db_id}); 
+            stmt.free(); 
+            if (result.x !== undefined) { 
+                infoPanel.querySelector('h3').textContent = `Waypoint #${db_id}`; 
+                document.getElementById('info-x').textContent = result.x.toFixed(4); 
+                document.getElementById('info-y').textContent = result.y.toFixed(4); 
+                document.getElementById('info-z').textContent = result.z.toFixed(4); 
+                document.getElementById('info-roll').textContent = result.roll.toFixed(4); 
+                document.getElementById('info-pitch').textContent = result.pitch.toFixed(4); 
+                document.getElementById('info-yaw').textContent = result.yaw.toFixed(4); 
+            } 
+        } else if (selectedIndices.size > 1) { 
+            infoPanel.querySelector('h3').textContent = `${selectedIndices.size} Waypoints Selected`; 
+            document.getElementById('info-x').textContent = '---'; 
+            document.getElementById('info-y').textContent = '---'; 
+            document.getElementById('info-z').textContent = '---'; 
+            document.getElementById('info-roll').textContent = '---'; 
+            document.getElementById('info-pitch').textContent = '---'; 
+            document.getElementById('info-yaw').textContent = '---'; 
         }
-        waypointsObject.geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     }
     
-    function updateInfoPanel() {
-        if (selectedIndices.size === 1) {
-            const index = selectedIndices.values().next().value;
-            const db_id = indexToDbId[index];
-            const stmt = db.prepare("SELECT x, y, z, roll, pitch, yaw FROM waypoints WHERE id = :id");
-            const result = stmt.getAsObject({':id': db_id});
-            stmt.free();
+    function updateInterpolationPanel() {
+        const infoText = document.getElementById('interpolation-info');
+        const linearBtn = document.getElementById('linear-interpolate');
+        const radialSlider = document.getElementById('radial-strength');
+        const radialValueInput = document.getElementById('radial-strength-value');
+        const selectionSize = selectedIndices.size;
 
-            if (result.x !== undefined) {
-                infoPanel.querySelector('h3').textContent = `Waypoint #${db_id}`;
-                document.getElementById('info-x').textContent = result.x.toFixed(4);
-                document.getElementById('info-y').textContent = result.y.toFixed(4);
-                document.getElementById('info-z').textContent = result.z.toFixed(4);
-                document.getElementById('info-roll').textContent = result.roll.toFixed(4);
-                document.getElementById('info-pitch').textContent = result.pitch.toFixed(4);
-                document.getElementById('info-yaw').textContent = result.yaw.toFixed(4);
-                infoPanel.classList.add('visible');
-            }
-        } else if (selectedIndices.size > 1) {
-            infoPanel.querySelector('h3').textContent = `${selectedIndices.size} Waypoints Selected`;
-            document.getElementById('info-x').textContent = '---';
-            document.getElementById('info-y').textContent = '---';
-            document.getElementById('info-z').textContent = '---';
-            document.getElementById('info-roll').textContent = '---';
-            document.getElementById('info-pitch').textContent = '---';
-            document.getElementById('info-yaw').textContent = '---';
-            infoPanel.classList.add('visible');
+        if (pathSelectionStartIndex !== null && selectionSize > 0) {
+            infoText.textContent = `Path start point selected. Click an end point.`;
+        } else if (selectionSize > 0) {
+             infoText.textContent = `${selectionSize} points selected.`;
         } else {
-            infoPanel.classList.remove('visible');
+             infoText.textContent = `Click a start and end point on the path to begin.`;
         }
+        
+        const canInterpolate = selectionSize >= 3;
+        linearBtn.disabled = !canInterpolate;
+        radialSlider.disabled = !canInterpolate;
+        radialValueInput.disabled = !canInterpolate;
+    }
+
+
+    // --- Map Display Options
+    function applyMapDisplayOptions() {
+        if (!originalMapGeometry) return;
+
+        document.getElementById('loader').textContent = 'Processing Map...';
+        document.getElementById('loader').style.display = 'block';
+
+        setTimeout(() => {
+            try {
+                const voxelSize = parseFloat(document.getElementById('voxel-size').value);
+                let processedGeometry = voxelSize > 0 ? downsample(originalMapGeometry, voxelSize) : originalMapGeometry.clone();
+                
+                const colorMode = document.getElementById('color-mode').value;
+                colorize(processedGeometry, colorMode);
+                
+                if (mapObject) {
+                    scene.remove(mapObject);
+                    mapObject.geometry.dispose();
+                }
+                
+                mapObject.geometry = processedGeometry;
+                scene.add(mapObject);
+            } catch (error) {
+                console.error("Error processing map display options:", error);
+                alert("An error occurred while processing the map.");
+            } finally {
+                document.getElementById('loader').style.display = 'none';
+            }
+        }, 50);
+    }
+
+    function downsample(geometry, voxelSize) {
+        const newPositions = [];
+        const newColors = [];
+        const grid = new Set();
+        const positions = geometry.attributes.position.array;
+        const hasOriginalColors = geometry.attributes.color;
+        const colors = hasOriginalColors ? geometry.attributes.color.array : null;
+
+        for (let i = 0; i < positions.length; i += 3) {
+            const key = `${Math.floor(positions[i] / voxelSize)}|${Math.floor(positions[i+1] / voxelSize)}|${Math.floor(positions[i+2] / voxelSize)}`;
+            if (!grid.has(key)) {
+                grid.add(key);
+                newPositions.push(positions[i], positions[i+1], positions[i+2]);
+                if (colors) {
+                    newColors.push(colors[i], colors[i+1], colors[i+2]);
+                }
+            }
+        }
+        
+        const newGeom = new THREE.BufferGeometry();
+        newGeom.setAttribute('position', new THREE.Float32BufferAttribute(newPositions, 3));
+        if (colors && newColors.length > 0) {
+            newGeom.setAttribute('color', new THREE.Float32BufferAttribute(newColors, 3));
+        }
+        return newGeom;
+    }
+
+    function colorize(geometry, mode) {
+        if (mode === 'default') {
+            if (originalMapGeometry && originalMapGeometry.attributes.color) {
+                geometry.setAttribute('color', originalMapGeometry.attributes.color.clone());
+            } else {
+                geometry.deleteAttribute('color');
+            }
+            mapObject.material.vertexColors = originalMapGeometry.attributes.color !== undefined;
+            mapObject.material.needsUpdate = true;
+            return;
+        }
+
+        const positions = geometry.attributes.position.array;
+        const colors = new Float32Array(positions.length);
+        const color = new THREE.Color();
+        geometry.computeBoundingBox();
+        const box = geometry.boundingBox;
+        
+        let minVal, maxVal;
+
+        if (mode === 'height') {
+            minVal = box.min.z;
+            maxVal = box.max.z;
+        } else if (mode === 'range') {
+            minVal = Infinity; maxVal = -Infinity;
+            for (let i = 0; i < positions.length; i += 3) {
+                const dist = Math.sqrt(positions[i]**2 + positions[i+1]**2 + positions[i+2]**2);
+                minVal = Math.min(minVal, dist);
+                maxVal = Math.max(maxVal, dist);
+            }
+        }
+
+        const range = maxVal - minVal;
+        if (range <= 0) return;
+
+        for (let i = 0; i < positions.length; i += 3) {
+            let val;
+            if (mode === 'height') {
+                val = positions[i + 2];
+            } else {
+                val = Math.sqrt(positions[i]**2 + positions[i+1]**2 + positions[i+2]**2);
+            }
+            const normalized = (val - minVal) / range;
+            color.setHSL(0.7 * (1 - normalized), 1.0, 0.5);
+            colors[i] = color.r;
+            colors[i + 1] = color.g;
+            colors[i + 2] = color.b;
+        }
+        
+        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+        mapObject.material.vertexColors = true;
+        mapObject.material.needsUpdate = true;
     }
     
     // --- Event Listeners ---
     function onPointerDown(event) {
-        if (!editMode || !waypointsObject || isCameraOverrideActive) return;
+        if (!editMode || isCameraOverrideActive) return;
         
         const rect = renderer.domElement.getBoundingClientRect();
         pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        
+        if(camera.isOrthographicCamera) {
+            raycaster.params.Points.threshold = dynamicPointSize / camera.zoom;
+        } else {
+            raycaster.params.Points.threshold = dynamicPointSize;
+        }
+
         raycaster.setFromCamera(pointer, camera);
 
-        const intersects = raycaster.intersectObject(waypointsObject);
+        const intersects = waypointsObject ? raycaster.intersectObject(waypointsObject) : [];
+        const clickedIndex = intersects.length > 0 ? intersects[0].index : -1;
         
         switch (editSubMode) {
             case 'add':
-                const intersectionAdd = new THREE.Vector3();
+                const intersectionAdd = new THREE.Vector3(); 
                 if (raycaster.ray.intersectPlane(raycastPlane, intersectionAdd)) addPoint(intersectionAdd);
                 break;
             case 'select':
-                if (intersects.length > 0) {
-                    const clickedIndex = intersects[0].index;
+                if (clickedIndex !== -1) {
+                    clearSelection();
+                    selectedIndices.add(clickedIndex);
+                    updateAllColors();
+                    updateInfoPanel();
+                } else {
+                    isMarqueeSelecting = true;
+                    controls.enabled = false;
+                    marqueeStart.set(event.clientX, event.clientY);
+                    selectionBox.style.display = 'block';
+                    selectionBox.style.left = `${event.clientX}px`;
+                    selectionBox.style.top = `${event.clientY}px`;
+                    selectionBox.style.width = '0px';
+                    selectionBox.style.height = '0px';
+                }
+                break;
+            case 'interpolate':
+                if (clickedIndex !== -1) {
                     if (pathSelectionStartIndex === null) {
                         clearSelection();
                         pathSelectionStartIndex = clickedIndex;
@@ -409,89 +1091,247 @@
                     } else {
                         const start = Math.min(pathSelectionStartIndex, clickedIndex);
                         const end = Math.max(pathSelectionStartIndex, clickedIndex);
-                        for (let i = start; i <= end; i++) {
-                            selectedIndices.add(i);
-                        }
+                        for (let i = start; i <= end; i++) selectedIndices.add(i);
                         pathSelectionStartIndex = null;
                     }
                     updateAllColors();
-                    updateInfoPanel();
+                    updateInterpolationPanel();
                 } else {
                     clearSelection();
+                    updateInterpolationPanel();
                 }
                 break;
             case 'move':
-                if (intersects.length > 0 && selectedIndices.has(intersects[0].index)) {
-                    isDragging = true;
-                    controls.enabled = false;
-                    app.classList.add('draggable');
-                    
-                    const intersectionMove = new THREE.Vector3();
-                    if (raycaster.ray.intersectPlane(raycastPlane, intersectionMove)) {
-                       dragStart3D = intersectionMove;
-                       initialDragPositions = new Map();
-                       const positions = waypointsObject.geometry.attributes.position;
-                       for (const index of selectedIndices) {
-                           initialDragPositions.set(index, new THREE.Vector3().fromBufferAttribute(positions, index));
-                       }
-                    }
-                }
+                handleMovePointerDown(clickedIndex, event);
                 break;
-            case 'delete':
-                if (intersects.length > 0) {
-                    const clickedIndex = intersects[0].index;
+            case 'delete': 
+                if (clickedIndex !== -1) {
                     if (!selectedIndices.has(clickedIndex)) {
                         clearSelection();
                         selectedIndices.add(clickedIndex);
                     }
-                    deleteSelectedPoints();
+                    deleteSelectedPoints(); 
                 }
                 break;
         }
     }
 
-    function onPointerMove(event) {
-        if (isCameraOverrideActive || !editMode || !isDragging || selectedIndices.size === 0 || !waypointsObject) return;
-        
+    function handleMovePointerDown(clickedIndex, event) {
+        switch (moveSubMode) {
+            case 'drag':
+                if (clickedIndex !== -1) {
+                    isDraggingPoint = true;
+                    dragStartIndex = clickedIndex;
+                    
+                    if (!selectedIndices.has(clickedIndex)) {
+                        clearSelection();
+                        selectedIndices.add(clickedIndex);
+                        updateAllColors();
+                        updateInfoPanel();
+                    }
+                    
+                    const positions = waypointsObject.geometry.attributes.position;
+                    dragStartPositions.clear();
+                    for(const index of selectedIndices) {
+                        dragStartPositions.set(index, new THREE.Vector3().fromBufferAttribute(positions, index));
+                    }
+
+                    const startPos = dragStartPositions.get(clickedIndex);
+                    const cameraDirection = new THREE.Vector3();
+                    camera.getWorldDirection(cameraDirection);
+                    raycastPlane.setFromNormalAndCoplanarPoint(cameraDirection, startPos);
+
+                    const intersectionMove = new THREE.Vector3();
+                    if(raycaster.ray.intersectPlane(raycastPlane, intersectionMove)) {
+                        dragStartOffset.subVectors(startPos, intersectionMove);
+                    }
+
+                    controls.enabled = false;
+                    app.classList.add('draggable');
+                    createPersistentGhostPreview();
+                }
+                break;
+            case 'box-select':
+                isMarqueeSelecting = true;
+                controls.enabled = false;
+                marqueeStart.set(event.clientX, event.clientY);
+                selectionBox.style.display = 'block';
+                selectionBox.style.left = `${event.clientX}px`;
+                selectionBox.style.top = `${event.clientY}px`;
+                selectionBox.style.width = '0px';
+                selectionBox.style.height = '0px';
+                break;
+            case 'path-select':
+                if (clickedIndex !== -1) {
+                    if (movePathStartIndex === null) {
+                        clearSelection();
+                        movePathStartIndex = clickedIndex;
+                    } else {
+                        const start = Math.min(movePathStartIndex, clickedIndex);
+                        const end = Math.max(movePathStartIndex, clickedIndex);
+                        for (let i = start; i <= end; i++) selectedIndices.add(i);
+                        movePathStartIndex = null;
+                        moveSubMode = 'drag';
+                    }
+                    updateAllColors();
+                    updateInfoPanel();
+                }
+                break;
+        }
+    }
+
+    function handleHover(event) {
+        if (!editMode || isDraggingPoint || isMarqueeSelecting || !waypointsObject) {
+            if (hoverIndicator.visible) {
+                hoveredPointIndex = null;
+                hoverIndicator.visible = false;
+            }
+            return;
+        }
+
         const rect = renderer.domElement.getBoundingClientRect();
         pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-        raycaster.setFromCamera(pointer, camera);
         
-        const intersection = new THREE.Vector3();
-        if (raycaster.ray.intersectPlane(raycastPlane, intersection)) {
-            const delta = new THREE.Vector3().subVectors(intersection, dragStart3D);
-            const positions = waypointsObject.geometry.attributes.position;
-            
-            for (const [index, initialPos] of initialDragPositions.entries()) {
-                const newPos = new THREE.Vector3().addVectors(initialPos, delta);
-                positions.setXYZ(index, newPos.x, newPos.y, newPos.z);
+        if(camera.isOrthographicCamera) {
+            raycaster.params.Points.threshold = dynamicPointSize / camera.zoom;
+        } else {
+            raycaster.params.Points.threshold = dynamicPointSize;
+        }
+
+        raycaster.setFromCamera(pointer, camera);
+        const intersects = raycaster.intersectObject(waypointsObject);
+
+        if (intersects.length > 0) {
+            const index = intersects[0].index;
+            if (hoveredPointIndex !== index) {
+                hoveredPointIndex = index;
+                const pos = new THREE.Vector3().fromBufferAttribute(waypointsObject.geometry.attributes.position, index);
+                hoverIndicator.position.copy(pos);
+                hoverIndicator.visible = true;
             }
-            positions.needsUpdate = true;
-            updateInfoPanel();
+        } else {
+            if (hoveredPointIndex !== null) {
+                hoveredPointIndex = null;
+                hoverIndicator.visible = false;
+            }
+        }
+    }
+
+    function onPointerMove(event) {
+        if (isCameraOverrideActive) return;
+
+        handleHover(event);
+
+        if (isMarqueeSelecting) {
+            marqueeEnd.set(event.clientX, event.clientY);
+            const left = Math.min(marqueeStart.x, marqueeEnd.x);
+            const top = Math.min(marqueeStart.y, marqueeEnd.y);
+            const width = Math.abs(marqueeStart.x - marqueeEnd.x);
+            const height = Math.abs(marqueeStart.y - marqueeEnd.y);
+            selectionBox.style.left = `${left}px`;
+            selectionBox.style.top = `${top}px`;
+            selectionBox.style.width = `${width}px`;
+            selectionBox.style.height = `${height}px`;
+
+            updateSelectionFromMarquee();
+            return;
+        }
+
+        if (isDraggingPoint) {
+            const rect = renderer.domElement.getBoundingClientRect();
+            pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+            raycaster.setFromCamera(pointer, camera);
+            
+            const intersection = new THREE.Vector3();
+            if (raycaster.ray.intersectPlane(raycastPlane, intersection)) {
+                const positions = waypointsObject.geometry.attributes.position;
+                
+                const newDragPointPos = intersection.clone().add(dragStartOffset);
+                const initialDraggedPointPos = dragStartPositions.get(dragStartIndex);
+                const delta = new THREE.Vector3().subVectors(newDragPointPos, initialDraggedPointPos);
+
+                for (const index of selectedIndices) {
+                    const initialPos = dragStartPositions.get(index);
+                    if (initialPos) {
+                        const newPos = initialPos.clone().add(delta);
+                        positions.setXYZ(index, newPos.x, newPos.y, newPos.z);
+                    }
+                }
+                positions.needsUpdate = true;
+            }
         }
     }
 
     function onPointerUp(event) {
-        if (isCameraOverrideActive) return;
-
-        if (isDragging) {
-            isDragging = false;
-            controls.enabled = true;
-            app.classList.remove('draggable');
-
-            const positionsToUpdate = new Map();
-            const positions = waypointsObject.geometry.attributes.position;
-            for (const index of selectedIndices) {
-                const db_id = indexToDbId[index];
-                const pos = new THREE.Vector3().fromBufferAttribute(positions, index);
-                positionsToUpdate.set(db_id, pos);
+        if (isMarqueeSelecting) {
+            isMarqueeSelecting = false;
+            selectionBox.style.display = 'none';
+            if(editSubMode === 'move') {
+                moveSubMode = 'drag';
             }
-            updatePointsInDb(positionsToUpdate);
+            updateInfoPanel();
         }
+
+        if (isDraggingPoint) {
+            recordState();
+            const positions = waypointsObject.geometry.attributes.position;
+            const indicesToUpdate = Array.from(selectedIndices);
+            const newPositions = indicesToUpdate.map(index => new THREE.Vector3().fromBufferAttribute(positions, index));
+            batchUpdateDbPositions(indicesToUpdate, newPositions);
+            clearPersistentGhostPreview();
+
+            if (selectedIndices.size > 0) {
+                lastMovedIndices = new Set(selectedIndices);
+                document.getElementById('generate-connections').disabled = false;
+            }
+        }
+
+        isDraggingPoint = false;
+        if(controls) controls.enabled = true;
+        app.classList.remove('draggable');
     }
     
+    function updateSelectionFromMarquee() {
+        if (!waypointsObject || !camera) return;
+
+        const rect = renderer.domElement.getBoundingClientRect();
+        const boxMinX = Math.min(marqueeStart.x, marqueeEnd.x) - rect.left;
+        const boxMinY = Math.min(marqueeStart.y, marqueeEnd.y) - rect.top;
+        const boxMaxX = Math.max(marqueeStart.x, marqueeEnd.x) - rect.left;
+        const boxMaxY = Math.max(marqueeStart.y, marqueeEnd.y) - rect.top;
+
+        const positions = waypointsObject.geometry.attributes.position;
+        const tempVec = new THREE.Vector3();
+        
+        clearSelection();
+
+        for (let i = 0; i < positions.count; i++) {
+            tempVec.fromBufferAttribute(positions, i);
+            tempVec.project(camera);
+
+            const screenX = (tempVec.x * 0.5 + 0.5) * rect.width;
+            const screenY = (-tempVec.y * 0.5 + 0.5) * rect.height;
+            
+            if (screenX >= boxMinX && screenX <= boxMaxX && screenY >= boxMinY && screenY <= boxMaxY) {
+                selectedIndices.add(i);
+            }
+        }
+        updateAllColors();
+    }
+
+
     // --- UI Wiring ---
+    document.getElementById('display-toggle').addEventListener('click', () => displayPanel.classList.toggle('visible'));
+    document.getElementById('map-point-size').addEventListener('input', (e) => { if (mapObject) mapObject.material.size = parseFloat(e.target.value); });
+    document.getElementById('waypoint-size').addEventListener('input', (e) => {
+        dynamicPointSize = parseFloat(e.target.value);
+        updateWaypointVisuals();
+    });
+    document.getElementById('color-mode').addEventListener('change', applyMapDisplayOptions);
+    document.getElementById('voxel-size').addEventListener('change', applyMapDisplayOptions);
+
     const mapFileInput = document.getElementById('map-file');
     const waypointFileInput = document.getElementById('waypoint-file');
     const newWaypointsBtn = document.getElementById('new-waypoints');
@@ -500,6 +1340,142 @@
     const viewSelect = document.getElementById('view-select');
     const lockRotationBtn = document.getElementById('lock-rotation');
     
+    document.getElementById('linear-interpolate').addEventListener('click', linearInterpolateSelected);
+    document.getElementById('generate-connections').addEventListener('click', generatePathConnections);
+    
+    // Move Panel Buttons
+    document.getElementById('move-select-box').addEventListener('click', () => {
+        moveSubMode = 'box-select';
+    });
+     document.getElementById('move-select-path').addEventListener('click', () => {
+        moveSubMode = 'path-select';
+        movePathStartIndex = null;
+        clearSelection();
+    });
+
+    const radialSlider = document.getElementById('radial-strength');
+    const radialValueInput = document.getElementById('radial-strength-value');
+
+    // --- Radial Interpolation Controls Synchronization ---
+    function restoreInterpolationPoints() {
+        if (interpolationOriginalPositions.size === 0 || !waypointsObject) return;
+        const positions = waypointsObject.geometry.attributes.position;
+        for (const [index, pos] of interpolationOriginalPositions) {
+            positions.setXYZ(index, pos.x, pos.y, pos.z);
+        }
+        positions.needsUpdate = true;
+    }
+
+    function syncAndPreviewRadial(value) {
+        const min = parseFloat(radialSlider.min);
+        const max = parseFloat(radialSlider.max);
+        let clampedValue = Math.max(min, Math.min(max, value));
+        radialSlider.value = clampedValue;
+        if (document.activeElement !== radialValueInput) {
+           radialValueInput.value = clampedValue.toFixed(2);
+        }
+        restoreInterpolationPoints();
+        performRadialInterpolation(false);
+    }
+
+    function commitRadialChange() {
+        restoreInterpolationPoints();
+        recordState();
+        createPersistentGhostPreview();
+        performRadialInterpolation(true);
+        interpolationOriginalPositions.clear();
+        clearTransientGhostPreview();
+        let finalValue = parseFloat(radialSlider.value);
+        radialValueInput.value = finalValue.toFixed(2);
+    }
+    
+    const startRadialPreview = () => {
+        // Guard to prevent re-capturing points during a single interaction
+        if (interpolationOriginalPositions.size > 0) return;
+        
+        createTransientGhostPreview();
+        interpolationOriginalPositions.clear();
+        if (!waypointsObject) return;
+        const positions = waypointsObject.geometry.attributes.position;
+        for (const index of selectedIndices) {
+            interpolationOriginalPositions.set(index, new THREE.Vector3().fromBufferAttribute(positions, index));
+        }
+    };
+
+    radialSlider.addEventListener('input', () => syncAndPreviewRadial(parseFloat(radialSlider.value)));
+    radialValueInput.addEventListener('input', () => {
+        let value = parseFloat(radialValueInput.value);
+        if (!isNaN(value)) {
+            syncAndPreviewRadial(value);
+        }
+    });
+
+    radialSlider.addEventListener('pointerdown', startRadialPreview);
+    radialValueInput.addEventListener('focus', startRadialPreview);
+    
+    radialSlider.addEventListener('change', commitRadialChange);
+    radialValueInput.addEventListener('change', commitRadialChange);
+    // --- End Radial Controls ---
+
+    document.getElementById('edit-undo').addEventListener('click', undo);
+    document.getElementById('edit-redo').addEventListener('click', redo);
+
+    function onMapFileSelect(file) {
+        document.getElementById('loader').style.display = 'block';
+        document.getElementById('loader').textContent = 'Loading Map...';
+        const url = URL.createObjectURL(file);
+        const loader = file.name.toLowerCase().endsWith('.ply') ? new PLYLoader() : new PCDLoader();
+        
+        loader.load(url, (object) => {
+            const geometry = object.isPoints ? object.geometry : object;
+            if (mapObject) {
+                scene.remove(mapObject);
+                mapObject.geometry.dispose();
+                mapObject.material.dispose();
+            }
+
+            // Apply ROS transformation to map
+            const positions = geometry.attributes.position.array;
+            for (let i = 0; i < positions.length; i += 3) {
+                let x = positions[i];
+                let y = positions[i+1];
+                positions[i] = -y; // three.x = -ros.y
+                positions[i+1] = x; // three.y = ros.x
+            }
+            geometry.attributes.position.needsUpdate = true;
+
+            geometry.computeBoundingBox();
+            geometry.boundingBox.getCenter(mapOffset);
+            geometry.translate(-mapOffset.x, -mapOffset.y, -mapOffset.z);
+            
+            originalMapGeometry = geometry.clone();
+            
+            const material = new THREE.PointsMaterial({
+                size: 0.5,
+                vertexColors: originalMapGeometry.attributes.color !== undefined
+            });
+            mapObject = new THREE.Points(originalMapGeometry.clone(), material);
+            scene.add(mapObject);
+            
+            if (db) {
+                refreshWaypointsFromDB();
+            }
+            
+            document.getElementById('map-point-size').value = 0.5;
+            document.getElementById('color-mode').value = 'default';
+            document.getElementById('voxel-size').value = 0;
+            displayPanel.classList.remove('visible');
+            document.getElementById('loader').style.display = 'none';
+            
+            setView(viewSelect.value);
+            URL.revokeObjectURL(url);
+        }, undefined, (error) => {
+            console.error("Error loading map file:", error);
+            alert("Failed to load map file. Please check the console for details.");
+            document.getElementById('loader').style.display = 'none';
+        });
+    }
+
     function updateButtonState() {
         const hasDb = db !== null;
         saveWaypointsBtn.disabled = !hasDb;
@@ -513,7 +1489,10 @@
         editToolbar.style.display = editMode ? 'flex' : 'none';
         document.getElementById('hint').style.display = editMode ? 'none' : 'block';
         document.getElementById('hint-edit').style.display = editMode ? 'block' : 'none';
-        if (!editMode) clearSelection();
+        if (!editMode) {
+          clearSelection();
+          updateActivePanels();
+        };
     }
     
     mapFileInput.addEventListener('change', e => e.target.files[0] && onMapFileSelect(e.target.files[0]));
@@ -536,34 +1515,40 @@
         lockRotationBtn.textContent = isRotationLocked ? 'Unlock Rotation' : 'Lock Rotation';
         lockRotationBtn.style.background = isRotationLocked ? '#5476ff' : '#2a2f3a';
     });
-
-    const editModeButtons = {
-        add: document.getElementById('edit-add'),
-        move: document.getElementById('edit-move'),
-        delete: document.getElementById('edit-delete'),
-        select: document.getElementById('edit-select'),
+    
+    const editModeButtons = { 
+        add: document.getElementById('edit-add'), 
+        select: document.getElementById('edit-select'), 
+        move: document.getElementById('edit-move'), 
+        interpolate: document.getElementById('edit-interpolate'),
+        delete: document.getElementById('edit-delete'), 
     };
     const hintSpan = document.getElementById('edit-mode-hint');
 
-    Object.entries(editModeButtons).forEach(([mode, button]) => {
-        button.addEventListener('click', () => {
-            if (mode !== 'select') { // If switching away from select mode, finalize any path selection
-                pathSelectionStartIndex = null;
-                updateAllColors();
-            }
+    Object.entries(editModeButtons).forEach(([mode, button]) => { 
+        button.addEventListener('click', () => { 
             editSubMode = mode;
-            Object.values(editModeButtons).forEach(btn => btn.classList.remove('active'));
-            button.classList.add('active');
-            app.classList.toggle('delete-mode', mode === 'delete');
+            moveSubMode = 'drag'; // Reset move sub-mode
+            lastMovedIndices = null; // Reset for rubber banding
+            document.getElementById('generate-connections').disabled = true;
+
+            Object.values(editModeButtons).forEach(btn => btn.classList.remove('active')); 
+            button.classList.add('active'); 
+            app.classList.toggle('delete-mode', mode === 'delete'); 
             
-            // Update hint text
-            switch(mode) {
+            // Reset selection state when changing modes
+            clearSelection();
+            updateActivePanels();
+            updateInterpolationPanel();
+
+            switch(mode) { 
                 case 'add': hintSpan.textContent = "Click on the grid to add a waypoint."; break;
-                case 'move': hintSpan.textContent = "Click and drag selected points to move them."; break;
-                case 'delete': hintSpan.textContent = "Click a waypoint or selection to delete."; break;
-                case 'select': hintSpan.textContent = "Click a start and end point to select a path."; break;
-            }
-        });
+                case 'select': hintSpan.textContent = "Click a point or drag a box to select."; break;
+                case 'move': hintSpan.textContent = "Select points, then drag them to move."; break;
+                case 'interpolate': hintSpan.textContent = "Click start and end points of a path to interpolate."; break;
+                case 'delete': hintSpan.textContent = "Click a waypoint or a selection to delete."; break;
+            } 
+        }); 
     });
     
     renderer.domElement.addEventListener('pointerdown', onPointerDown);
@@ -575,26 +1560,51 @@
             cameraModeIndicator.style.display = 'none';
             return;
         }
+        
         if (e.ctrlKey && e.shiftKey) {
-            controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
-            cameraModeIndicator.textContent = "Camera Mode: Orbit";
+            controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE; // Orbit
+            cameraModeIndicator.textContent = "Camera Mode: Pan";
             cameraModeIndicator.style.display = 'block';
         } else if (e.ctrlKey) {
-            controls.mouseButtons.LEFT = THREE.MOUSE.PAN;
-            cameraModeIndicator.textContent = "Camera Mode: Pan";
+            controls.mouseButtons.LEFT = THREE.MOUSE.PAN; // Pan
+            cameraModeIndicator.textContent = "Camera Mode: Orbit";
             cameraModeIndicator.style.display = 'block';
         }
     }
 
     window.addEventListener('keydown', (e) => {
+        const activeElement = document.activeElement;
+        const isInputActive = activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'SELECT');
+
+        // Prevent global shortcuts if an input is focused
+        if (isInputActive) {
+            if (e.key === 'Backspace' || e.key === 'Delete') {
+                // Allow default input behavior
+                return;
+            }
+        }
+
+        if (e.key === 'Delete' || e.key === 'Backspace') {
+            if (editMode && selectedIndices.size > 0) {
+                deleteSelectedPoints();
+            }
+        }
+        if (e.ctrlKey && e.key.toLowerCase() === 'z') {
+            e.preventDefault();
+            if (isInputActive) return; // Prevent undo while typing
+            if (e.shiftKey) redo(); else undo();
+        } else if (e.ctrlKey && e.key.toLowerCase() === 'y') {
+            e.preventDefault();
+            if (isInputActive) return; // Prevent redo while typing
+            redo();
+        }
+
         if (editMode && e.key === 'Control' && !isCameraOverrideActive) {
             isCameraOverrideActive = true;
             controls.enabled = true;
             updateCameraModeIndicator(e);
         } else if (editMode && e.key === 'Shift' && isCameraOverrideActive) {
             updateCameraModeIndicator(e);
-        } else if (editMode && (e.key === 'Delete' || e.key === 'Backspace')) {
-            deleteSelectedPoints();
         }
     });
 
@@ -602,26 +1612,14 @@
         if (e.key === 'Control') {
             isCameraOverrideActive = false;
             cameraModeIndicator.style.display = 'none';
-            controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE; // Restore default
+            controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
         } else if (e.key === 'Shift' && isCameraOverrideActive) {
-            updateCameraModeIndicator(e); // Re-evaluates to Pan mode
+            updateCameraModeIndicator(e);
         }
     });
 
 
     // --- Helper & View Functions ---
-    function onMapFileSelect(file) {
-        const url = URL.createObjectURL(file);
-        const loader = file.name.toLowerCase().endsWith('.ply') ? new PLYLoader() : new PCDLoader();
-        loader.load(url, geometryOrPoints => {
-            if (mapObject) scene.remove(mapObject);
-            mapObject = geometryOrPoints.isPoints ? geometryOrPoints : new THREE.Points(geometryOrPoints, new THREE.PointsMaterial({ size: 0.01, vertexColors: true}));
-            scene.add(mapObject);
-            setView(viewSelect.value);
-            URL.revokeObjectURL(url);
-        });
-    }
-
     function setView(viewType) {
         if (controls) { controls.dispose(); }
 
@@ -631,6 +1629,8 @@
         const center = box.getCenter(new THREE.Vector3());
         const size = box.getSize(new THREE.Vector3());
         const maxDim = Math.max(size.x, size.y, size.z) || 10;
+        
+        const currentWaypointSize = dynamicPointSize;
 
         if (viewType === 'perspective') {
             camera = new THREE.PerspectiveCamera(60, aspect, 0.01, 10000);
@@ -645,17 +1645,21 @@
             
             if (viewType === 'top') {
                 camera.position.set(center.x, center.y, center.z + maxDim);
-                raycastPlane.set(new THREE.Vector3(0, 0, 1), 0); 
+                raycastPlane.set(new THREE.Vector3(0, 0, 1), center.z); 
             } else if (viewType === 'front') {
                 camera.position.set(center.x, center.y - maxDim, center.z);
-                raycastPlane.set(new THREE.Vector3(0, 1, 0), 0); 
+                camera.lookAt(center);
+                raycastPlane.set(new THREE.Vector3(0, 1, 0), -center.y); 
             } else if (viewType === 'side') {
                 camera.position.set(center.x + maxDim, center.y, center.z);
-                raycastPlane.set(new THREE.Vector3(1, 0, 0), 0); 
+                camera.lookAt(center);
+                raycastPlane.set(new THREE.Vector3(-1, 0, 0), -center.x); 
             }
         }
         
-        camera.lookAt(center);
+        if (viewType !== 'front' && viewType !== 'side') {
+             camera.lookAt(center);
+        }
         
         controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
@@ -675,12 +1679,10 @@
         }
         
         hintMain.innerHTML = 'Orbit: Left-drag • Pan: Right-drag • Zoom: Wheel';
+        
         dynamicPointSize = Math.max(maxDim / 800, 0.02);
-        if (waypointsObject) {
-            waypointsObject.material.size = camera.isPerspectiveCamera ? dynamicPointSize : 3.0;
-            waypointsObject.material.sizeAttenuation = camera.isPerspectiveCamera;
-            waypointsObject.material.needsUpdate = true;
-        }
+        document.getElementById('waypoint-size').value = dynamicPointSize;
+        updateWaypointVisuals();
     }
 
 
@@ -688,6 +1690,20 @@
     function tick(){
       requestAnimationFrame(tick);
       if (controls) controls.update();
+      if (hoverIndicator.visible && camera) {
+          hoverIndicator.quaternion.copy(camera.quaternion);
+          const baseScale = dynamicPointSize * 0.2; 
+          if (camera.isOrthographicCamera) {
+              const scale = (camera.top - camera.bottom) / window.innerHeight;
+              hoverIndicator.scale.setScalar(scale * 15);
+          } else { 
+              const distance = hoverIndicator.position.distanceTo(camera.position);
+              const vFOV = THREE.MathUtils.degToRad(camera.fov);
+              const height = 2 * Math.tan(vFOV / 2) * distance;
+              const scale = height / renderer.domElement.clientHeight * 15;
+              hoverIndicator.scale.setScalar(scale);
+          }
+      }
       renderer.render(scene, camera);
     }
     
@@ -708,6 +1724,10 @@
     initDatabase().then(() => {
         setView('perspective'); // Initialize with a default view
         tick();
+    }).catch(err => {
+        console.error("Initialization failed:", err);
+        document.getElementById('loader').textContent = 'Error! Check console.';
+        alert("A fatal error occurred during initialization. The application may not work correctly. Please check the developer console for details.");
     });
   </script>
 </body>
