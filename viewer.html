@@ -1357,16 +1357,52 @@
         mapObject.material.needsUpdate = true;
     }
    
+    // --- Orthographic View Hit Detection ---
+    function findClosestPointOrthographic(event) {
+        if (!waypointsObject || !camera) return -1;
+
+        const rect = renderer.domElement.getBoundingClientRect();
+        const mouse = {
+            x: event.clientX - rect.left,
+            y: event.clientY - rect.top
+        };
+
+        const hitRadius = 10; // Pixel radius for selection
+        let closestPointIndex = -1;
+        let minDistanceSq = Infinity;
+
+        const positions = waypointsObject.geometry.attributes.position;
+        const tempVec = new THREE.Vector3();
+
+        for (let i = 0; i < positions.count; i++) {
+            tempVec.fromBufferAttribute(positions, i);
+            tempVec.project(camera);
+
+            const screenX = (tempVec.x * 0.5 + 0.5) * rect.width;
+            const screenY = (-tempVec.y * 0.5 + 0.5) * rect.height;
+
+            const dx = mouse.x - screenX;
+            const dy = mouse.y - screenY;
+            const distanceSq = dx * dx + dy * dy;
+
+            if (distanceSq < minDistanceSq && distanceSq < hitRadius * hitRadius) {
+                minDistanceSq = distanceSq;
+                closestPointIndex = i;
+            }
+        }
+        return closestPointIndex;
+    }
+
     // --- Event Listeners ---
     function onPointerDown(event) {
         if (!camera) return;
         const rect = renderer.domElement.getBoundingClientRect();
         pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-        raycaster.setFromCamera(pointer, camera);
         
         // --- Shape Drawing/Selection Logic ---
         if (isDrawingPaletteVisible) {
+            raycaster.setFromCamera(pointer, camera);
             const shapeIntersects = raycaster.intersectObjects(shapeGroup.children, true);
             const isDrawingToolActive = currentTool !== 'select' && currentTool !== 'delete';
 
@@ -1402,6 +1438,7 @@
                     app.classList.add('shape-move');
                     
                     const intersectionMove = new THREE.Vector3();
+                    raycaster.setFromCamera(pointer, camera);
                     raycaster.ray.intersectPlane(raycastPlane, intersectionMove)
                     shapeDragOffset.subVectors(clickedShape.position, intersectionMove);
 
@@ -1415,18 +1452,22 @@
         // --- Waypoint Editing Logic ---
         if (!editMode || isCameraOverrideActive) return;
        
-        if(camera.isOrthographicCamera) {
-            raycaster.params.Points.threshold = dynamicPointSize / camera.zoom;
-        } else {
-            raycaster.params.Points.threshold = dynamicPointSize;
+        let clickedIndex = -1;
+        if (waypointsObject) {
+            if (camera.isOrthographicCamera) {
+                clickedIndex = findClosestPointOrthographic(event);
+            } else {
+                raycaster.params.Points.threshold = dynamicPointSize;
+                raycaster.setFromCamera(pointer, camera);
+                const intersects = raycaster.intersectObject(waypointsObject);
+                clickedIndex = intersects.length > 0 ? intersects[0].index : -1;
+            }
         }
-
-        const intersects = waypointsObject ? raycaster.intersectObject(waypointsObject) : [];
-        const clickedIndex = intersects.length > 0 ? intersects[0].index : -1;
        
         switch (editSubMode) {
             case 'add':
                 const intersectionAdd = new THREE.Vector3(); 
+                raycaster.setFromCamera(pointer, camera);
                 if (raycaster.ray.intersectPlane(raycastPlane, intersectionAdd)) addPoint(intersectionAdd);
                 break;
             case 'select':
@@ -1553,32 +1594,31 @@
             return;
         }
 
-        const rect = renderer.domElement.getBoundingClientRect();
-        pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-        pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-       
-        if(camera.isOrthographicCamera) {
-            raycaster.params.Points.threshold = dynamicPointSize / camera.zoom;
+        let index = -1;
+        if (camera.isOrthographicCamera) {
+            index = findClosestPointOrthographic(event);
         } else {
+            const rect = renderer.domElement.getBoundingClientRect();
+            pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
             raycaster.params.Points.threshold = dynamicPointSize;
+            raycaster.setFromCamera(pointer, camera);
+            const intersects = raycaster.intersectObject(waypointsObject);
+            if (intersects.length > 0) {
+                index = intersects[0].index;
+            }
         }
 
-        raycaster.setFromCamera(pointer, camera);
-        const intersects = raycaster.intersectObject(waypointsObject);
-
-        if (intersects.length > 0) {
-            const index = intersects[0].index;
-            if (hoveredPointIndex !== index) {
-                hoveredPointIndex = index;
-                const pos = new THREE.Vector3().fromBufferAttribute(waypointsObject.geometry.attributes.position, index);
-                hoverIndicator.position.copy(pos);
-                hoverIndicator.visible = true;
-            }
-        } else {
+        if (index === -1) {
             if (hoveredPointIndex !== null) {
                 hoveredPointIndex = null;
                 hoverIndicator.visible = false;
             }
+        } else if (hoveredPointIndex !== index) {
+            hoveredPointIndex = index;
+            const pos = new THREE.Vector3().fromBufferAttribute(waypointsObject.geometry.attributes.position, index);
+            hoverIndicator.position.copy(pos);
+            hoverIndicator.visible = true;
         }
     }
 
@@ -2179,5 +2219,3 @@
   </script>
 </body>
 </html>
-
-
