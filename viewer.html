@@ -16,7 +16,7 @@
   <style>
     html, body { height:100%; margin:0; background:#0b0e14; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
     #app { position:fixed; inset:0; cursor: default; }
-    #app.draggable { cursor: grab; }
+    #app.draggable, #app.shape-move { cursor: grab; }
     #app.delete-mode { cursor: crosshair; }
     #ui {
       position: fixed; top: 12px; left: 12px; z-index: 10;
@@ -112,67 +112,72 @@
       display: none;
       z-index: 1000;
     }
+    /* --- Drawing Palette Styles (Consolidated) --- */
     #drawing-palette {
-        position: fixed; top: 12px; right: 12px; z-index: 10;
-        display: flex; gap: 8px; align-items: center;
-        background: rgba(20,24,33,0.7); border: 1px solid rgba(255,255,255,0.08);
-        border-radius: 10px; padding: 8px 10px; color:#eaeefb; backdrop-filter: blur(6px);
-    }
-    #drawing-palette {
-    position: fixed;
-    top: 12px;
-    right: 12px;
-    z-index: 11;
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    flex-wrap: wrap;
-    background: rgba(20,24,33,0.9);
-    border: 1px solid rgba(255,255,255,0.15);
-    border-radius: 10px;
-    padding: 8px 12px;
-    color: #eaeffb;
+      position: fixed;
+      top: 70px; /* Moved down to avoid overlap with main toolbar */
+      right: 12px;
+      z-index: 11;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      background: rgba(20,24,33,0.9);
+      border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 10px;
+      padding: 8px 12px;
+      color: #eaeffb;
     }
     #drawing-palette button {
-    padding: 6px 12px;
-    font-size: 14px;
-    cursor: pointer;
+      padding: 0;
+      width: 36px;
+      height: 36px;
+      font-size: 14px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
     }
     #drawing-palette button.active {
-    background: #557fff;
-    border-color: #7faaff;
-    color: white;
+      background: #557fff;
+      border-color: #7faaff;
+      color: white;
+    }
+    #drawing-palette button svg {
+      width: 20px;
+      height: 20px;
+      stroke-width: 1.5;
     }
     #drawing-palette input[type="color"] {
-    -webkit-appearance: none;
-    -moz-appearance: none;
-    appearance: none;
-    width: 36px;
-    height: 36px;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    padding: 0;
-    background-color: transparent;
-    margin-left: 6px;
+      -webkit-appearance: none;
+      -moz-appearance: none;
+      appearance: none;
+      width: 36px;
+      height: 36px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      padding: 0;
+      background-color: transparent;
+      margin-left: 6px;
     }
     #drawing-palette input[type="color"]::-webkit-color-swatch {
-    border-radius: 8px;
-    border: 1px solid #3a4150;
+      border-radius: 8px;
+      border: 1px solid #3a4150;
     }
     #drawing-palette input[type="color"]::-moz-color-swatch {
-    border-radius: 8px;
-    border: 1px solid #3a4150;
+      border-radius: 8px;
+      border: 1px solid #3a4150;
     }
     #drawing-palette input[type="text"] {
-    width: 140px;
-    font-size: 14px;
-    padding: 6px 8px;
-    border-radius: 6px;
-    border: 1px solid #3a4150;
-    background: #0b0e14;
-    color: #c8dffb;
-    margin-left: 8px;
+      width: 140px;
+      font-size: 14px;
+      padding: 6px 8px;
+      border-radius: 6px;
+      border: 1px solid #3a4150;
+      background: #0b0e14;
+      color: #c8dffb;
+      margin-left: 8px;
     }
   </style>
 </head>
@@ -181,15 +186,16 @@
   <div id="selection-box"></div>
 
   <div id="ui">
-    <label for="map-file">Open Map (.ply/.pcd)</label>
+    <label for="map-file" class="file-label">Open Map (.ply/.pcd)</label>
     <input id="map-file" type="file" accept=".ply,.pcd" />
     <button id="display-toggle">Display Tools</button>
     <span style="border-left: 1px solid #444; margin: 0 4px;"></span>
-    <label for="waypoint-file">Open Waypoints (.db)</label>
+    <label for="waypoint-file" class="file-label">Open Waypoints (.db)</label>
     <input id="waypoint-file" type="file" accept=".db,.sqlite" />
     <button id="new-waypoints">New Waypoint Set</button>
     <button id="save-waypoints" disabled>Save Waypoints (.db)</button>
     <span style="border-left: 1px solid #444; margin: 0 4px;"></span>
+    <button id="add-label-toggle" disabled>Add Label</button>
     <button id="edit" disabled>Toggle Edit Mode</button>
     <div id="edit-toolbar">
         <button id="edit-add">Add</button>
@@ -209,7 +215,7 @@
     </select>
     <button id="lock-rotation">Lock Rotation</button>
   </div>
-  
+ 
   <div id="loader">Loading...</div>
 
   <div id="info-panel" class="side-panel">
@@ -281,19 +287,20 @@
     <span id="edit-mode-hint">Select points by clicking or dragging a box.</span> <b>Hold Ctrl for camera.</b>
   </div>
   <div id="camera-mode-indicator"></div>
-  <div id="drawing-palette">
-    <button id="tool-rect">Rect</button>
-    <button id="tool-oval">Oval</button>
-    <button id="tool-triangle">Triangle</button>
-    <button id="tool-arrow">Arrow</button>
-    <button id="tool-pentagon">Pentagon</button>
-    <button id="tool-star">Star</button>
-    <button id="tool-select">Select</button>
-    <button id="tool-delete" disabled>Delete</button>
-    <label for="fill-color">Fill:</label>
-    <input type="color" id="fill-color" value="#557FFF" />
-    <label for="shape-text">Text:</label>
-    <input type="text" id="shape-text" placeholder="optional text" />
+  
+  <div id="drawing-palette" style="display:none;">
+      <button id="tool-rect" title="Draw Rectangle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg></button>
+      <button id="tool-oval" title="Draw Oval"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><ellipse cx="12" cy="12" rx="10" ry="7"></ellipse></svg></button>
+      <button id="tool-triangle" title="Draw Triangle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2L2 22h20L12 2z"></path></svg></button>
+      <button id="tool-arrow" title="Draw Arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2v20m-6-8l6-6 6 6"></path></svg></button>
+      <button id="tool-pentagon" title="Draw Pentagon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 1.5l9.51 6.91-3.64 11.59H6.13L2.49 8.41 12 1.5z"></path></svg></button>
+      <button id="tool-star" title="Draw Star"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path></svg></button>
+      <button id="tool-select" title="Select/Move Shape" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 20l-7-15 15 7-8-2-2 8z"></path></svg></button>
+      <button id="tool-delete" title="Delete Shape"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>
+      <label for="fill-color" title="Fill Color">Fill:</label>
+      <input type="color" id="fill-color" value="#557FFF" />
+      <label for="shape-text" title="Optional Text">Text:</label>
+      <input type="text" id="shape-text" placeholder="optional text" />
   </div>
 
   <script type="module">
@@ -310,7 +317,7 @@
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(window.innerWidth, window.innerHeight);
     app.appendChild(renderer.domElement);
-    
+   
     // --- Global Camera and Controls ---
     let camera;
     let controls;
@@ -322,7 +329,7 @@
     const gridHelper = new THREE.GridHelper(10, 20, 0x3d4a66, 0x202838);
     gridHelper.rotation.x = Math.PI / 2;
     scene.add(gridHelper);
-    
+   
     // --- Hover Indicator ---
     const hoverRingGeo = new THREE.RingGeometry(1, 1.2, 32);
     const hoverRingMat = new THREE.MeshBasicMaterial({ color: 0x00ffff, side: THREE.DoubleSide, transparent: true, opacity: 0.8, depthTest: false });
@@ -356,7 +363,7 @@
     let undoStack = [];
     let redoStack = [];
     const MAX_HISTORY = 50;
-    
+   
     // Interpolation State
     let interpolationOriginalPositions = new Map();
 
@@ -365,7 +372,7 @@
     const selectionBox = document.getElementById('selection-box');
     const marqueeStart = new THREE.Vector2();
     const marqueeEnd = new THREE.Vector2();
-    
+   
     const raycaster = new THREE.Raycaster();
     raycaster.params.Points.threshold = 0.05;
     const pointer = new THREE.Vector2();
@@ -377,17 +384,22 @@
     const displayPanel = document.getElementById('display-panel');
     const editToolbar = document.getElementById('edit-toolbar');
     const cameraModeIndicator = document.getElementById('camera-mode-indicator');
+    const drawingPalette = document.getElementById('drawing-palette');
 
-
+    // --- Drawing/Annotation State ---
     const shapeGroup = new THREE.Group();
     scene.add(shapeGroup);
-
-    let currentTool = null;      // active shape tool string (rect, oval, etc. or 'select')
-    let drawing = false;
-    let startPoint = new THREE.Vector3();
+    let currentTool = 'select';
+    let isDrawingShape = false;
+    let isMovingShape = false;
+    let shapeDragOffset = new THREE.Vector3();
+    let shapeDrawStartPoint = new THREE.Vector3();
     let selectedShape = null;
+    let ghostShape = null;
     let shapeCounter = 1;
     const shapes = [];
+    let isDrawingPaletteVisible = false;
+
 
     // --- Coordinate System Transformations ---
     // ROS (x-fwd, y-left, z-up) to Three.js (y-fwd, x-right, z-up)
@@ -409,7 +421,7 @@
           x REAL NOT NULL, y REAL NOT NULL, z REAL NOT NULL,
           roll REAL DEFAULT 0, pitch REAL DEFAULT 0, yaw REAL DEFAULT 0
       );`;
-      
+     
     async function initDatabase() {
         SQL = await initSqlJs({ locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/${file}` });
     }
@@ -417,6 +429,44 @@
     // --- Undo/Redo and State Management ---
     const undoBtn = document.getElementById('edit-undo');
     const redoBtn = document.getElementById('edit-redo');
+    
+    // --- Shape Serialization for Undo/Redo ---
+    function serializeShapes() {
+        return shapeGroup.children.map(mesh => {
+            return {
+                ...mesh.userData.shapeData,
+                position: mesh.position.clone(),
+            };
+        });
+    }
+
+    function deserializeShapes(shapesState) {
+        // Clear existing shapes cleanly
+        while (shapeGroup.children.length > 0) {
+            const shape = shapeGroup.children[0];
+            shapeGroup.remove(shape);
+            shape.geometry.dispose();
+            shape.material.dispose();
+            if (shape.children.length > 0) {
+                const labelMesh = shape.children[0];
+                labelMesh.geometry.dispose();
+                if (labelMesh.material.map) labelMesh.material.map.dispose();
+                labelMesh.material.dispose();
+            }
+        }
+        shapes.length = 0; // Clear helper array
+
+        // Recreate shapes from the saved state
+        shapesState.forEach(data => {
+            const halfWidth = data.width / 2;
+            const halfHeight = data.height / 2;
+            const startPos = new THREE.Vector3(data.position.x - halfWidth, data.position.y - halfHeight, 0);
+            const endPos = new THREE.Vector3(data.position.x + halfWidth, data.position.y + halfHeight, 0);
+            
+            addShapeMesh(data.type, startPos, endPos, data.fillColor, data.text, false);
+        });
+    }
+
 
     function updateUndoRedoButtons() {
         undoBtn.disabled = undoStack.length < 2;
@@ -424,11 +474,12 @@
     }
 
     function recordState() {
-        if (!db) return;
-        clearPersistentGhostPreview();
         redoStack = [];
-        const dbState = db.export();
-        undoStack.push(dbState);
+        const state = {
+            dbState: db ? db.export() : null,
+            shapesState: serializeShapes()
+        };
+        undoStack.push(state);
         if (undoStack.length > MAX_HISTORY) {
             undoStack.shift();
         }
@@ -439,12 +490,19 @@
         if (undoStack.length < 2) return;
         const currentState = undoStack.pop();
         redoStack.push(currentState);
-        
+       
         const prevState = undoStack[undoStack.length - 1];
-        if (db) db.close();
-        db = new SQL.Database(new Uint8Array(prevState));
         
-        await refreshWaypointsFromDB();
+        // Restore DB
+        if (prevState.dbState) {
+            if (db) db.close();
+            db = new SQL.Database(new Uint8Array(prevState.dbState));
+            await refreshWaypointsFromDB();
+        }
+
+        // Restore Shapes
+        deserializeShapes(prevState.shapesState);
+
         clearAllGhostPreviews();
         updateUndoRedoButtons();
     }
@@ -453,11 +511,17 @@
         if (redoStack.length === 0) return;
         const nextState = redoStack.pop();
         undoStack.push(nextState);
+        
+        // Restore DB
+        if (nextState.dbState) {
+            if (db) db.close();
+            db = new SQL.Database(new Uint8Array(nextState.dbState));
+            await refreshWaypointsFromDB();
+        }
 
-        if (db) db.close();
-        db = new SQL.Database(new Uint8Array(nextState));
+        // Restore Shapes
+        deserializeShapes(nextState.shapesState);
 
-        await refreshWaypointsFromDB();
         clearAllGhostPreviews();
         updateUndoRedoButtons();
     }
@@ -495,211 +559,18 @@
             transientGhostObject = null;
         }
     }
-
-    function createShapeGeometry(type, width, height) {
-    const halfWidth = width / 2;
-    const halfHeight = height / 2;
-    switch(type) {
-        case 'rect':
-        const rectShape = new THREE.Shape();
-        rectShape.moveTo(-halfWidth, -halfHeight);
-        rectShape.lineTo(halfWidth, -halfHeight);
-        rectShape.lineTo(halfWidth, halfHeight);
-        rectShape.lineTo(-halfWidth, halfHeight);
-        rectShape.closePath();
-        return new THREE.ShapeGeometry(rectShape);
-        case 'oval':
-        const ovalShape = new THREE.Shape();
-        ovalShape.absellipse(0, 0, halfWidth, halfHeight, 0, Math.PI*2, false);
-        return new THREE.ShapeGeometry(ovalShape);
-        case 'triangle':
-        const triShape = new THREE.Shape();
-        triShape.moveTo(0, halfHeight);
-        triShape.lineTo(-halfWidth, -halfHeight);
-        triShape.lineTo(halfWidth, -halfHeight);
-        triShape.closePath();
-        return new THREE.ShapeGeometry(triShape);
-        case 'arrow':
-        const arrowShape = new THREE.Shape();
-        const bodyW = halfWidth * 0.4;
-        const headW = halfWidth;
-        const headH = halfHeight * 0.4;
-        arrowShape.moveTo(0, halfHeight);
-        arrowShape.lineTo(-headW, halfHeight - headH);
-        arrowShape.lineTo(-bodyW, halfHeight - headH);
-        arrowShape.lineTo(-bodyW, -halfHeight);
-        arrowShape.lineTo(bodyW, -halfHeight);
-        arrowShape.lineTo(bodyW, halfHeight - headH);
-        arrowShape.lineTo(headW, halfHeight - headH);
-        arrowShape.closePath();
-        return new THREE.ShapeGeometry(arrowShape);
-        case 'pentagon':
-        const pentShape = new THREE.Shape();
-        const radius = Math.min(halfWidth, halfHeight);
-        for (let i = 0; i < 5; i++) {
-            const angle = (i * 2 * Math.PI) / 5 - Math.PI / 2;
-            const x = Math.cos(angle) * radius;
-            const y = Math.sin(angle) * radius;
-            if (i===0) pentShape.moveTo(x,y); else pentShape.lineTo(x,y);
-        }
-        pentShape.closePath();
-        return new THREE.ShapeGeometry(pentShape);
-        case 'star':
-        const starShape = new THREE.Shape();
-        const outerRadius = Math.min(halfWidth, halfHeight);
-        const innerRadius = outerRadius * 0.4;
-        for (let i = 0; i < 10; i++) {
-            const angle = (i * Math.PI) / 5 - Math.PI / 2;
-            const radius = i % 2 === 0 ? outerRadius : innerRadius;
-            const x = Math.cos(angle) * radius;
-            const y = Math.sin(angle) * radius;
-            if (i ===0 ) starShape.moveTo(x,y); else starShape.lineTo(x,y);
-        }
-        starShape.closePath();
-        return new THREE.ShapeGeometry(starShape);
-    }
-    return null;
-    }
-
-    function addShapeMesh(type, startPos, endPos, fillColor, text) {
-    const width = Math.abs(endPos.x - startPos.x);
-    const height = Math.abs(endPos.y - startPos.y);
-    if (width < 0.05 && height < 0.05) return null;
-
-    const geo = createShapeGeometry(type, width, height);
-    if (!geo) return null;
-
-    const mat = new THREE.MeshBasicMaterial({
-        color: fillColor || 0x4477ff,
-        transparent: true,
-        opacity: 0.6,
-        side: THREE.DoubleSide
-    });
-
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set((startPos.x + endPos.x)/2, (startPos.y + endPos.y)/2, 0.01);
-
-
-    if (text && text.trim().length > 0) {
-        const canvas = document.createElement('canvas');
-        canvas.width = 256; canvas.height = 64;
-        const ctx = canvas.getContext('2d');
-        ctx.font = '24px sans-serif';
-        ctx.fillStyle = 'white';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(text, canvas.width/2, canvas.height/2);
-        const tex = new THREE.CanvasTexture(canvas);
-        const labelMat = new THREE.MeshBasicMaterial({map: tex, transparent: true});
-        const labelGeo = new THREE.PlaneGeometry(width * 0.8, height * 0.2);
-        const labelMesh = new THREE.Mesh(labelGeo, labelMat);
-        labelMesh.position.set(0, 0, 0.02);
-        mesh.add(labelMesh);
-    }
-
-    mesh.userData.shapeId = shapeCounter++;
-    shapes.push(mesh);
-    shapeGroup.add(mesh);
-    return mesh;
-    }
-
-    function selectShape(mesh) {
-    if (selectedShape) selectedShape.material.emissive?.setHex(0x000000);
-    selectedShape = mesh;
-    if (selectedShape) {
-        if (!selectedShape.material.emissive) selectedShape.material.emissive = new THREE.Color(0x000000);
-        selectedShape.material.emissive.setHex(0x888800);
-    }
-    }
-
-    function deleteSelectedShape() {
-    if (!selectedShape) return;
-    shapeGroup.remove(selectedShape);
-    selectedShape.geometry.dispose();
-    selectedShape.material.dispose();
-    shapes.splice(shapes.indexOf(selectedShape), 1);
-    selectedShape = null;
-    document.getElementById('tool-delete').disabled = true;
-    }
-
-    // --- Shape Event Handlers ---
-
-    renderer.domElement.addEventListener('pointerdown', (e) => {
-    if (!currentTool || currentTool === 'select') return;
-
-    const rect = renderer.domElement.getBoundingClientRect();
-    pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-    raycaster.setFromCamera(pointer, camera);
-    const point = new THREE.Vector3();
-    if (raycaster.ray.intersectPlane(raycastPlane, point)) {
-        startPoint.copy(point);
-        drawing = true;
-        e.stopPropagation();
-    }
-    });
-
-    renderer.domElement.addEventListener('pointerup', (e) => {
-    if (!drawing) return;
-
-    const rect = renderer.domElement.getBoundingClientRect();
-    pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-    raycaster.setFromCamera(pointer, camera);
-    const point = new THREE.Vector3();
-    if (raycaster.ray.intersectPlane(raycastPlane, point)) {
-        const fillColor = document.getElementById('fill-color').value || '#4477ff';
-        const labelText = document.getElementById('shape-text').value || '';
-        addShapeMesh(currentTool, startPoint, point, fillColor, labelText);
-    }
-
-    drawing = false;
-    e.stopPropagation();
-    });
-
-    renderer.domElement.addEventListener('click', (e) => {
-    if (currentTool !== 'select') return;
-
-    const rect = renderer.domElement.getBoundingClientRect();
-    pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-
-    raycaster.setFromCamera(pointer, camera);
-    const intersects = raycaster.intersectObjects(shapeGroup.children);
-
-    if (intersects.length > 0) {
-        selectShape(intersects[0].object);
-        document.getElementById('tool-delete').disabled = false;
-    } else {
-        selectShape(null);
-        document.getElementById('tool-delete').disabled = true;
-    }
-    });
-
-    document.getElementById('tool-rect').onclick = () => { currentTool = 'rect'; updateActiveDrawingButton(); };
-    document.getElementById('tool-oval').onclick = () => { currentTool = 'oval'; updateActiveDrawingButton(); };
-    document.getElementById('tool-triangle').onclick = () => { currentTool = 'triangle'; updateActiveDrawingButton(); };
-    document.getElementById('tool-arrow').onclick = () => { currentTool = 'arrow'; updateActiveDrawingButton(); };
-    document.getElementById('tool-pentagon').onclick = () => { currentTool = 'pentagon'; updateActiveDrawingButton(); };
-    document.getElementById('tool-star').onclick = () => { currentTool = 'star'; updateActiveDrawingButton(); };
-    document.getElementById('tool-select').onclick = () => { currentTool = 'select'; updateActiveDrawingButton(); };
-    document.getElementById('tool-delete').onclick = () => deleteSelectedShape();
-
-    function updateActiveDrawingButton() {
-    ['tool-rect','tool-oval','tool-triangle','tool-arrow','tool-pentagon','tool-star','tool-select']
-        .forEach(id => document.getElementById(id).classList.remove('active'));
-    if(currentTool) document.getElementById('tool-' + currentTool).classList.add('active');
-    }
-    
+   
     async function createPersistentGhostPreview() {
         clearPersistentGhostPreview();
         const indices = Array.from(selectedIndices);
         if (indices.length === 0 || undoStack.length === 0) return;
 
-        const prevState = undoStack[undoStack.length - 1];
-        const tempDb = new SQL.Database(new Uint8Array(prevState));
+        const lastState = undoStack[undoStack.length - 1];
+        if (!lastState.dbState) return;
+
+        const tempDb = new SQL.Database(new Uint8Array(lastState.dbState));
         const stmt = tempDb.prepare("SELECT x, y, z FROM waypoints ORDER BY id;");
-        
+       
         const allOldPositions = [];
         while (stmt.step()) {
             const row = stmt.get();
@@ -715,7 +586,7 @@
                 ghostPositions.push(allOldPositions[index * 3], allOldPositions[index * 3 + 1], allOldPositions[index * 3 + 2]);
             }
         }
-        
+       
         if (ghostPositions.length === 0) return;
 
         const geometry = new THREE.BufferGeometry();
@@ -730,7 +601,7 @@
         persistentGhostObject = new THREE.Points(geometry, material);
         scene.add(persistentGhostObject);
     }
-    
+   
     function clearPersistentGhostPreview() {
         if (persistentGhostObject) {
             scene.remove(persistentGhostObject);
@@ -745,7 +616,172 @@
         clearPersistentGhostPreview();
     }
 
+    // --- Annotation Shape Drawing ---
+    function createShapeGeometry(type, width, height) {
+        const halfWidth = width / 2;
+        const halfHeight = height / 2;
+        const shape = new THREE.Shape();
+        
+        switch(type) {
+            case 'rect':
+                shape.moveTo(-halfWidth, -halfHeight);
+                shape.lineTo(halfWidth, -halfHeight);
+                shape.lineTo(halfWidth, halfHeight);
+                shape.lineTo(-halfWidth, halfHeight);
+                shape.closePath();
+                break;
+            case 'oval':
+                shape.absellipse(0, 0, halfWidth, halfHeight, 0, Math.PI * 2, false);
+                break;
+            case 'triangle':
+                shape.moveTo(0, halfHeight);
+                shape.lineTo(-halfWidth, -halfHeight);
+                shape.lineTo(halfWidth, -halfHeight);
+                shape.closePath();
+                break;
+            case 'arrow':
+                const bodyW = halfWidth * 0.4;
+                const headW = halfWidth;
+                const headH = halfHeight * 0.4;
+                shape.moveTo(0, halfHeight);
+                shape.lineTo(-headW, halfHeight - headH);
+                shape.lineTo(-bodyW, halfHeight - headH);
+                shape.lineTo(-bodyW, -halfHeight);
+                shape.lineTo(bodyW, -halfHeight);
+                shape.lineTo(bodyW, halfHeight - headH);
+                shape.lineTo(headW, halfHeight - headH);
+                shape.closePath();
+                break;
+            case 'pentagon':
+                const pRadius = Math.min(halfWidth, halfHeight);
+                for (let i = 0; i < 5; i++) {
+                    const angle = (i * 2 * Math.PI) / 5 - Math.PI / 2;
+                    const x = Math.cos(angle) * pRadius;
+                    const y = Math.sin(angle) * pRadius;
+                    if (i===0) shape.moveTo(x,y); else shape.lineTo(x,y);
+                }
+                shape.closePath();
+                break;
+            case 'star':
+                const outerRadius = Math.min(halfWidth, halfHeight);
+                const innerRadius = outerRadius * 0.4;
+                for (let i = 0; i < 10; i++) {
+                    const angle = (i * Math.PI) / 5 - Math.PI / 2;
+                    const radius = i % 2 === 0 ? outerRadius : innerRadius;
+                    const x = Math.cos(angle) * radius;
+                    const y = Math.sin(angle) * radius;
+                    if (i === 0 ) shape.moveTo(x,y); else shape.lineTo(x,y);
+                }
+                shape.closePath();
+                break;
+            default:
+                return null;
+        }
+        return new THREE.ShapeGeometry(shape);
+    }
 
+    function addShapeMesh(type, startPos, endPos, fillColor, text, isGhost = false) {
+        const width = Math.abs(endPos.x - startPos.x);
+        const height = Math.abs(endPos.y - startPos.y);
+        if (width < 0.05 && height < 0.05) return null;
+
+        const geo = createShapeGeometry(type, width, height);
+        if (!geo) return null;
+
+        const mat = new THREE.MeshBasicMaterial({
+            color: fillColor || 0x4477ff,
+            transparent: true,
+            opacity: isGhost ? 0.3 : 0.6,
+            side: THREE.DoubleSide,
+            polygonOffset: true,
+            polygonOffsetFactor: -shapes.length - 1, // Pulls the polygon towards the camera
+            polygonOffsetUnits: -1
+        });
+
+        const mesh = new THREE.Mesh(geo, mat);
+        // A small, constant Z offset to keep shapes slightly above the grid.
+        mesh.position.set((startPos.x + endPos.x)/2, (startPos.y + endPos.y)/2, 0.01);
+
+        if (text && text.trim().length > 0 && !isGhost) {
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            const fontSize = 48; // Use higher resolution for sharper text
+            context.font = `${fontSize}px sans-serif`;
+            const textWidth = context.measureText(text).width;
+
+            canvas.width = THREE.MathUtils.ceilPowerOfTwo(textWidth + 20);
+            canvas.height = THREE.MathUtils.ceilPowerOfTwo(fontSize * 1.5);
+
+            // Re-apply font settings after resize
+            context.font = `${fontSize}px sans-serif`;
+            context.fillStyle = 'white';
+            context.textAlign = 'center';
+            context.textBaseline = 'middle';
+            context.fillText(text, canvas.width/2, canvas.height/2);
+
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.minFilter = THREE.LinearFilter;
+            tex.needsUpdate = true; // Ensures the texture updates reliably
+            const labelMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthTest: false });
+            
+            // Scale the label plane relative to the parent shape's width
+            const labelAspect = canvas.height / canvas.width;
+            const labelWidth = width * 0.9;
+            const labelHeight = labelWidth * labelAspect;
+
+            const labelGeo = new THREE.PlaneGeometry(labelWidth, labelHeight);
+            const labelMesh = new THREE.Mesh(labelGeo, labelMat);
+            labelMesh.position.set(0, 0, 0.001); // Keep label just slightly above its parent shape
+            mesh.add(labelMesh);
+        }
+
+        if (!isGhost) {
+            mesh.userData.shapeData = { type, width, height, fillColor, text };
+            shapes.push(mesh);
+        }
+        shapeGroup.add(mesh);
+        return mesh;
+    }
+
+    function selectShape(mesh) {
+        if (selectedShape) {
+            selectedShape.material.emissive?.setHex(0x000000);
+        }
+        selectedShape = mesh;
+        if (selectedShape) {
+            if (!selectedShape.material.emissive) {
+                selectedShape.material.emissive = new THREE.Color(0x000000);
+            }
+            selectedShape.material.emissive.setHex(0xcccc00); // Highlight color
+        }
+        // This button is now a tool, not an action on selection.
+        // document.getElementById('tool-delete').disabled = !selectedShape;
+    }
+
+    function deleteSelectedShape() {
+        if (!selectedShape) return;
+        recordState();
+        
+        // Dispose of geometries and materials to free memory
+        shapeGroup.remove(selectedShape);
+        selectedShape.geometry.dispose();
+        selectedShape.material.dispose();
+        if (selectedShape.children.length > 0) {
+            const labelMesh = selectedShape.children[0];
+            labelMesh.geometry.dispose();
+            if (labelMesh.material.map) {
+                labelMesh.material.map.dispose();
+            }
+            labelMesh.material.dispose();
+        }
+
+        const index = shapes.indexOf(selectedShape);
+        if (index > -1) {
+            shapes.splice(index, 1);
+        }
+        selectShape(null);
+    }
+    
     // --- Waypoint Loading and Management ---
     function clearVisualWaypoints() {
         if (waypointsObject) {
@@ -757,10 +793,10 @@
         clearSelection();
         indexToDbId = [];
     }
-    
+   
     function updateWaypointVisuals() {
         if (!waypointsObject || !camera) return;
-        
+       
         const perspectiveSize = dynamicPointSize;
         const orthoBaseSize = 3.0;
         const defaultDynamicSize = 0.05;
@@ -790,15 +826,15 @@
             positions.push(transformed.x - mapOffset.x, transformed.y - mapOffset.y, transformed.z - mapOffset.z);
         }
         stmt.free();
-        
+       
         if (positions.length === 0) return;
 
         const geometry = new THREE.BufferGeometry();
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-        
+       
         const material = new THREE.PointsMaterial({ size: dynamicPointSize, vertexColors: true });
         waypointsObject = new THREE.Points(geometry, material);
-        
+       
         // Restore selection
         selectedIndices.clear();
         for (const dbId of oldSelectionDbIds) {
@@ -806,7 +842,7 @@
                 selectedIndices.add(dbIdToIndex.get(dbId));
             }
         }
-        
+       
         updateAllColors();
         scene.add(waypointsObject);
         updateWaypointVisuals();
@@ -815,7 +851,7 @@
 
     async function loadWaypointsFromFile(file) {
         if (!SQL) return alert("Database engine is not ready.");
-        
+       
         if (db) { db.close(); db = null; }
         clearVisualWaypoints();
         document.getElementById('loader').style.display = 'block';
@@ -826,17 +862,17 @@
             db = new SQL.Database(new Uint8Array(buffer));
             const res = db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='waypoints';");
             if (res.length === 0) throw new Error("Database does not contain a 'waypoints' table.");
-            
+           
             undoStack = [];
             redoStack = [];
-            recordState();
+            recordState(); // Record initial state
         } catch (err) {
             alert(`Error loading database: ${err.message}`);
             db = null;
         }
-        
+       
         await refreshWaypointsFromDB();
-        
+       
         updateButtonState();
         document.getElementById('loader').style.display = 'none';
         setView(viewSelect.value);
@@ -845,7 +881,7 @@
     function createNewWaypointSet() {
         if (!SQL) return alert("Database engine is not ready.");
         if (db) db.close();
-        
+       
         db = new SQL.Database();
         db.run(WAYPOINT_TABLE_SQL);
         undoStack = [];
@@ -865,20 +901,20 @@
         link.click();
         URL.revokeObjectURL(link.href);
     }
-    
+   
     // --- Point Manipulation ---
     async function addPoint(position) {
         if (!db) return;
-        recordState();
         const threePos = position.clone().add(mapOffset);
         const rosPos = threeToRos(threePos);
         db.run("INSERT INTO waypoints (x, y, z, roll, pitch, yaw) VALUES (?, ?, ?, 0, 0, 0)", [rosPos.x, rosPos.y, rosPos.z]);
+        recordState();
         await refreshWaypointsFromDB();
     }
-        
+       
     async function batchUpdateDbPositions(indicesToUpdate, newPositions) {
         if (!db || !waypointsObject) return;
-        
+       
         try {
             db.run("BEGIN TRANSACTION");
             for (let i = 0; i < indicesToUpdate.length; i++) {
@@ -893,14 +929,14 @@
             console.error("Batch DB update failed, rolling back.", e);
             db.run("ROLLBACK");
         }
+        recordState();
     }
 
 
     async function linearInterpolateSelected() {
         const indices = Array.from(selectedIndices).sort((a, b) => a - b);
         if (indices.length < 3) return; 
-        
-        recordState();
+       
         createPersistentGhostPreview();
 
         const positions = waypointsObject.geometry.attributes.position;
@@ -932,13 +968,13 @@
         const positions = waypointsObject.geometry.attributes.position;
         const startIdx = indices[0];
         const endIdx = indices[indices.length - 1];
-        
+       
         const p0 = new THREE.Vector3().fromBufferAttribute(positions, startIdx);
         const p3 = new THREE.Vector3().fromBufferAttribute(positions, endIdx);
 
         const prevIdx = startIdx > 0 ? startIdx - 1 : 0;
         const p_minus_1 = new THREE.Vector3().fromBufferAttribute(positions, prevIdx);
-        
+       
         const nextIdx = endIdx < positions.count - 1 ? endIdx + 1 : endIdx;
         const p_plus_1 = new THREE.Vector3().fromBufferAttribute(positions, nextIdx);
 
@@ -966,30 +1002,30 @@
         for (let i = 1; i < indices.length - 1; i++) {
             const currentIdx = indices[i];
             const t = (currentIdx - startIdx) / (endIdx - startIdx);
-            
+           
             const t_inv = 1 - t;
             const c0 = t_inv * t_inv * t_inv;
             const c1 = 3 * t_inv * t_inv * t;
             const c2 = 3 * t_inv * t * t;
             const c3 = t * t * t;
-            
+           
             const newPos = p0.clone().multiplyScalar(c0)
                 .add(p1.clone().multiplyScalar(c1))
                 .add(p2.clone().multiplyScalar(c2))
                 .add(p3.clone().multiplyScalar(c3));
-            
+           
             positions.setXYZ(currentIdx, newPos.x, newPos.y, newPos.z);
             intermediaryIndices.push(currentIdx);
             newPositions.push(newPos);
         }
 
         positions.needsUpdate = true;
-        
+       
         if (saveToDb) {
             await batchUpdateDbPositions(intermediaryIndices, newPositions);
         }
     }
-    
+   
     async function generatePathConnections() {
         if (!lastMovedIndices || lastMovedIndices.size < 1) return;
         if (!db) return;
@@ -1002,8 +1038,6 @@
 
         await new Promise(resolve => setTimeout(resolve, 20));
 
-        recordState();
-        
         const stmt = db.prepare("SELECT id, x, y, z, roll, pitch, yaw FROM waypoints ORDER BY id;");
         const allPoints = [];
         while(stmt.step()) {
@@ -1014,7 +1048,7 @@
             });
         }
         stmt.free();
-        
+       
         const movedIdxs = Array.from(lastMovedIndices).sort((a,b) => a - b);
         const minIdx = movedIdxs[0];
         const maxIdx = movedIdxs[movedIdxs.length - 1];
@@ -1039,7 +1073,7 @@
 
             const p_before = new THREE.Vector3(allPoints[minIdx-1].x, allPoints[minIdx-1].y, allPoints[minIdx-1].z);
             const p_start = new THREE.Vector3(allPoints[minIdx].x, allPoints[minIdx].y, allPoints[minIdx].z);
-            
+           
             const dist = p_before.distanceTo(p_start);
             const numNewPoints = Math.max(0, Math.round(dist / localAvgDist) - 1);
 
@@ -1053,7 +1087,7 @@
                 insertOffset += numNewPoints;
             }
         }
-        
+       
         // Generate end connection
         if (maxIdx < allPoints.length - 1) {
             const distances = [];
@@ -1071,10 +1105,10 @@
 
             const p_end = new THREE.Vector3(allPoints[maxIdx].x, allPoints[maxIdx].y, allPoints[maxIdx].z);
             const p_after = new THREE.Vector3(allPoints[maxIdx+1].x, allPoints[maxIdx+1].y, allPoints[maxIdx+1].z);
-            
+           
             const dist = p_end.distanceTo(p_after);
             const numNewPoints = Math.max(0, Math.round(dist / localAvgDist) - 1);
-            
+           
             if (numNewPoints > 0) {
                 const p_end_prev = maxIdx > 0 ? new THREE.Vector3(allPoints[maxIdx-1].x, allPoints[maxIdx-1].y, allPoints[maxIdx-1].z) : p_end.clone().lerp(p_after, -1);
                 const p_after_2 = maxIdx < allPoints.length - 2 ? new THREE.Vector3(allPoints[maxIdx+2].x, allPoints[maxIdx+2].y, allPoints[maxIdx+2].z) : p_after.clone().lerp(p_end, -1);
@@ -1101,7 +1135,7 @@
                 db.run("ROLLBACK");
             }
         }
-
+        recordState();
         document.getElementById('generate-connections').disabled = true;
         lastMovedIndices = null;
         await refreshWaypointsFromDB();
@@ -1114,12 +1148,12 @@
 
     async function deleteSelectedPoints() { 
         if (!db || selectedIndices.size === 0) return; 
-        recordState();
         const idsToDelete = Array.from(selectedIndices).map(index => indexToDbId[index]); 
         if (idsToDelete.length === 0) return; 
         const placeholders = idsToDelete.map(() => '?').join(','); 
         db.run(`DELETE FROM waypoints WHERE id IN (${placeholders})`, idsToDelete);
         clearSelection();
+        recordState();
         await refreshWaypointsFromDB(); 
     }
 
@@ -1138,7 +1172,7 @@
         const selectedColor = new THREE.Color(0xff8800); 
         const defaultColor = new THREE.Color(0xffff00); 
         const pathStartColor = new THREE.Color(0x00ff00); 
-        
+       
         for (let i = 0; i < positions.count; i++) { 
             let color = defaultColor; 
             if (i === pathSelectionStartIndex || i === movePathStartIndex) { 
@@ -1188,7 +1222,7 @@
             document.getElementById('info-yaw').textContent = '---'; 
         }
     }
-    
+   
     function updateInterpolationPanel() {
         const infoText = document.getElementById('interpolation-info');
         const linearBtn = document.getElementById('linear-interpolate');
@@ -1203,7 +1237,7 @@
         } else {
              infoText.textContent = `Click a start and end point on the path to begin.`;
         }
-        
+       
         const canInterpolate = selectionSize >= 3;
         linearBtn.disabled = !canInterpolate;
         radialSlider.disabled = !canInterpolate;
@@ -1222,15 +1256,15 @@
             try {
                 const voxelSize = parseFloat(document.getElementById('voxel-size').value);
                 let processedGeometry = voxelSize > 0 ? downsample(originalMapGeometry, voxelSize) : originalMapGeometry.clone();
-                
+               
                 const colorMode = document.getElementById('color-mode').value;
                 colorize(processedGeometry, colorMode);
-                
+               
                 if (mapObject) {
                     scene.remove(mapObject);
                     mapObject.geometry.dispose();
                 }
-                
+               
                 mapObject.geometry = processedGeometry;
                 scene.add(mapObject);
             } catch (error) {
@@ -1260,7 +1294,7 @@
                 }
             }
         }
-        
+       
         const newGeom = new THREE.BufferGeometry();
         newGeom.setAttribute('position', new THREE.Float32BufferAttribute(newPositions, 3));
         if (colors && newColors.length > 0) {
@@ -1286,7 +1320,7 @@
         const color = new THREE.Color();
         geometry.computeBoundingBox();
         const box = geometry.boundingBox;
-        
+       
         let minVal, maxVal;
 
         if (mode === 'height') {
@@ -1317,31 +1351,79 @@
             colors[i + 1] = color.g;
             colors[i + 2] = color.b;
         }
-        
+       
         geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
         mapObject.material.vertexColors = true;
         mapObject.material.needsUpdate = true;
     }
-    
+   
     // --- Event Listeners ---
     function onPointerDown(event) {
-        if (!editMode || isCameraOverrideActive) return;
-        
+        if (!camera) return;
         const rect = renderer.domElement.getBoundingClientRect();
         pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(pointer, camera);
         
+        // --- Shape Drawing/Selection Logic ---
+        if (isDrawingPaletteVisible) {
+            const shapeIntersects = raycaster.intersectObjects(shapeGroup.children, true);
+            const isDrawingToolActive = currentTool !== 'select' && currentTool !== 'delete';
+
+            if (isDrawingToolActive) {
+                const point = new THREE.Vector3();
+                if (raycaster.ray.intersectPlane(raycastPlane, point)) {
+                    shapeDrawStartPoint.copy(point);
+                    isDrawingShape = true;
+                    return; 
+                }
+            } else if (currentTool === 'delete') {
+                if (shapeIntersects.length > 0) {
+                    let clickedObject = shapeIntersects[0].object;
+                    while (clickedObject.parent !== shapeGroup && clickedObject.parent !== null) {
+                        clickedObject = clickedObject.parent;
+                    }
+                    selectedShape = clickedObject; // Temporarily select for deletion
+                    deleteSelectedShape();
+                    return;
+                }
+            } else if (currentTool === 'select') {
+                 if (shapeIntersects.length > 0) {
+                    let clickedObject = shapeIntersects[0].object;
+                    while (clickedObject.parent !== shapeGroup && clickedObject.parent !== null) {
+                        clickedObject = clickedObject.parent;
+                    }
+                    const clickedShape = clickedObject;
+
+                    selectShape(clickedShape);
+                    
+                    isMovingShape = true;
+                    controls.enabled = false;
+                    app.classList.add('shape-move');
+                    
+                    const intersectionMove = new THREE.Vector3();
+                    raycaster.ray.intersectPlane(raycastPlane, intersectionMove)
+                    shapeDragOffset.subVectors(clickedShape.position, intersectionMove);
+
+                    return;
+                 } else {
+                    selectShape(null);
+                 }
+            }
+        }
+
+        // --- Waypoint Editing Logic ---
+        if (!editMode || isCameraOverrideActive) return;
+       
         if(camera.isOrthographicCamera) {
             raycaster.params.Points.threshold = dynamicPointSize / camera.zoom;
         } else {
             raycaster.params.Points.threshold = dynamicPointSize;
         }
 
-        raycaster.setFromCamera(pointer, camera);
-
         const intersects = waypointsObject ? raycaster.intersectObject(waypointsObject) : [];
         const clickedIndex = intersects.length > 0 ? intersects[0].index : -1;
-        
+       
         switch (editSubMode) {
             case 'add':
                 const intersectionAdd = new THREE.Vector3(); 
@@ -1404,14 +1486,14 @@
                 if (clickedIndex !== -1) {
                     isDraggingPoint = true;
                     dragStartIndex = clickedIndex;
-                    
+                   
                     if (!selectedIndices.has(clickedIndex)) {
                         clearSelection();
                         selectedIndices.add(clickedIndex);
                         updateAllColors();
                         updateInfoPanel();
                     }
-                    
+                   
                     const positions = waypointsObject.geometry.attributes.position;
                     dragStartPositions.clear();
                     for(const index of selectedIndices) {
@@ -1463,7 +1545,7 @@
     }
 
     function handleHover(event) {
-        if (!editMode || isDraggingPoint || isMarqueeSelecting || !waypointsObject) {
+        if (!camera || !editMode || isDraggingPoint || isMarqueeSelecting || !waypointsObject) {
             if (hoverIndicator.visible) {
                 hoveredPointIndex = null;
                 hoverIndicator.visible = false;
@@ -1474,7 +1556,7 @@
         const rect = renderer.domElement.getBoundingClientRect();
         pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-        
+       
         if(camera.isOrthographicCamera) {
             raycaster.params.Points.threshold = dynamicPointSize / camera.zoom;
         } else {
@@ -1501,10 +1583,39 @@
     }
 
     function onPointerMove(event) {
-        if (isCameraOverrideActive) return;
+        if (!camera || isCameraOverrideActive) return;
 
         handleHover(event);
 
+        const rect = renderer.domElement.getBoundingClientRect();
+        pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(pointer, camera);
+
+        // --- Shape Drawing/Moving Logic ---
+        if (isDrawingShape) {
+            if (ghostShape) {
+                shapeGroup.remove(ghostShape);
+                ghostShape.geometry.dispose();
+                ghostShape.material.dispose();
+                ghostShape = null;
+            }
+            const currentPoint = new THREE.Vector3();
+            if (raycaster.ray.intersectPlane(raycastPlane, currentPoint)) {
+                const tempColor = new THREE.Color(document.getElementById('fill-color').value);
+                ghostShape = addShapeMesh(currentTool, shapeDrawStartPoint, currentPoint, tempColor, '', true);
+            }
+            return;
+        }
+        if (isMovingShape && selectedShape) {
+            const intersection = new THREE.Vector3();
+            if(raycaster.ray.intersectPlane(raycastPlane, intersection)) {
+                selectedShape.position.copy(intersection).add(shapeDragOffset);
+            }
+            return;
+        }
+
+        // --- Waypoint Logic ---
         if (isMarqueeSelecting) {
             marqueeEnd.set(event.clientX, event.clientY);
             const left = Math.min(marqueeStart.x, marqueeEnd.x);
@@ -1521,15 +1632,10 @@
         }
 
         if (isDraggingPoint) {
-            const rect = renderer.domElement.getBoundingClientRect();
-            pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-            pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-            raycaster.setFromCamera(pointer, camera);
-            
             const intersection = new THREE.Vector3();
             if (raycaster.ray.intersectPlane(raycastPlane, intersection)) {
                 const positions = waypointsObject.geometry.attributes.position;
-                
+               
                 const newDragPointPos = intersection.clone().add(dragStartOffset);
                 const initialDraggedPointPos = dragStartPositions.get(dragStartIndex);
                 const delta = new THREE.Vector3().subVectors(newDragPointPos, initialDraggedPointPos);
@@ -1547,6 +1653,37 @@
     }
 
     function onPointerUp(event) {
+        if (!camera) return;
+        const rect = renderer.domElement.getBoundingClientRect();
+        pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera(pointer, camera);
+        
+        // --- Shape Logic ---
+        if (isDrawingShape) {
+            isDrawingShape = false;
+            if (ghostShape) {
+                shapeGroup.remove(ghostShape);
+                ghostShape.geometry.dispose();
+                ghostShape.material.dispose();
+                ghostShape = null;
+            }
+            const endPoint = new THREE.Vector3();
+            if (raycaster.ray.intersectPlane(raycastPlane, endPoint)) {
+                const fillColor = document.getElementById('fill-color').value;
+                const text = document.getElementById('shape-text').value;
+                addShapeMesh(currentTool, shapeDrawStartPoint, endPoint, fillColor, text, false);
+                recordState(); // Record state after adding a shape
+            }
+        }
+        if (isMovingShape) {
+            isMovingShape = false;
+            controls.enabled = true;
+            app.classList.remove('shape-move');
+            recordState(); // Record state after moving a shape
+        }
+
+        // --- Waypoint Logic ---
         if (isMarqueeSelecting) {
             isMarqueeSelecting = false;
             selectionBox.style.display = 'none';
@@ -1557,11 +1694,10 @@
         }
 
         if (isDraggingPoint) {
-            recordState();
             const positions = waypointsObject.geometry.attributes.position;
             const indicesToUpdate = Array.from(selectedIndices);
             const newPositions = indicesToUpdate.map(index => new THREE.Vector3().fromBufferAttribute(positions, index));
-            batchUpdateDbPositions(indicesToUpdate, newPositions);
+            batchUpdateDbPositions(indicesToUpdate, newPositions); // This now calls recordState internally
             clearPersistentGhostPreview();
 
             if (selectedIndices.size > 0) {
@@ -1574,7 +1710,7 @@
         if(controls) controls.enabled = true;
         app.classList.remove('draggable');
     }
-    
+   
     function updateSelectionFromMarquee() {
         if (!waypointsObject || !camera) return;
 
@@ -1586,7 +1722,7 @@
 
         const positions = waypointsObject.geometry.attributes.position;
         const tempVec = new THREE.Vector3();
-        
+       
         clearSelection();
 
         for (let i = 0; i < positions.count; i++) {
@@ -1595,7 +1731,7 @@
 
             const screenX = (tempVec.x * 0.5 + 0.5) * rect.width;
             const screenY = (-tempVec.y * 0.5 + 0.5) * rect.height;
-            
+           
             if (screenX >= boxMinX && screenX <= boxMaxX && screenY >= boxMinY && screenY <= boxMaxY) {
                 selectedIndices.add(i);
             }
@@ -1621,10 +1757,11 @@
     const editBtn = document.getElementById('edit');
     const viewSelect = document.getElementById('view-select');
     const lockRotationBtn = document.getElementById('lock-rotation');
-    
+    const addLabelToggleBtn = document.getElementById('add-label-toggle');
+   
     document.getElementById('linear-interpolate').addEventListener('click', linearInterpolateSelected);
     document.getElementById('generate-connections').addEventListener('click', generatePathConnections);
-    
+   
     // Move Panel Buttons
     document.getElementById('move-select-box').addEventListener('click', () => {
         moveSubMode = 'box-select';
@@ -1662,19 +1799,16 @@
 
     function commitRadialChange() {
         restoreInterpolationPoints();
-        recordState();
         createPersistentGhostPreview();
-        performRadialInterpolation(true);
+        performRadialInterpolation(true); // this calls batchUpdate which calls recordState
         interpolationOriginalPositions.clear();
         clearTransientGhostPreview();
         let finalValue = parseFloat(radialSlider.value);
         radialValueInput.value = finalValue.toFixed(2);
     }
-    
+   
     const startRadialPreview = () => {
-        // Guard to prevent re-capturing points during a single interaction
         if (interpolationOriginalPositions.size > 0) return;
-        
         createTransientGhostPreview();
         interpolationOriginalPositions.clear();
         if (!waypointsObject) return;
@@ -1694,7 +1828,7 @@
 
     radialSlider.addEventListener('pointerdown', startRadialPreview);
     radialValueInput.addEventListener('focus', startRadialPreview);
-    
+   
     radialSlider.addEventListener('change', commitRadialChange);
     radialValueInput.addEventListener('change', commitRadialChange);
     // --- End Radial Controls ---
@@ -1707,7 +1841,7 @@
         document.getElementById('loader').textContent = 'Loading Map...';
         const url = URL.createObjectURL(file);
         const loader = file.name.toLowerCase().endsWith('.ply') ? new PLYLoader() : new PCDLoader();
-        
+       
         loader.load(url, (object) => {
             const geometry = object.isPoints ? object.geometry : object;
             if (mapObject) {
@@ -1729,26 +1863,26 @@
             geometry.computeBoundingBox();
             geometry.boundingBox.getCenter(mapOffset);
             geometry.translate(-mapOffset.x, -mapOffset.y, -mapOffset.z);
-            
+           
             originalMapGeometry = geometry.clone();
-            
+           
             const material = new THREE.PointsMaterial({
                 size: 0.5,
                 vertexColors: originalMapGeometry.attributes.color !== undefined
             });
             mapObject = new THREE.Points(originalMapGeometry.clone(), material);
             scene.add(mapObject);
-            
+           
             if (db) {
                 refreshWaypointsFromDB();
             }
-            
+           
             document.getElementById('map-point-size').value = 0.5;
             document.getElementById('color-mode').value = 'default';
             document.getElementById('voxel-size').value = 0;
             displayPanel.classList.remove('visible');
             document.getElementById('loader').style.display = 'none';
-            
+           
             setView(viewSelect.value);
             URL.revokeObjectURL(url);
         }, undefined, (error) => {
@@ -1762,9 +1896,10 @@
         const hasDb = db !== null;
         saveWaypointsBtn.disabled = !hasDb;
         editBtn.disabled = !hasDb;
+        addLabelToggleBtn.disabled = !hasDb;
         if (!hasDb && editMode) toggleEditMode();
     }
-    
+   
     function toggleEditMode() {
         editMode = !editMode;
         editBtn.style.background = editMode ? '#5476ff' : '#2a2f3a';
@@ -1772,11 +1907,17 @@
         document.getElementById('hint').style.display = editMode ? 'none' : 'block';
         document.getElementById('hint-edit').style.display = editMode ? 'block' : 'none';
         if (!editMode) {
-          clearSelection();
-          updateActivePanels();
+             clearSelection();
+             selectShape(null);
+             updateActivePanels();
+             
+             // Also hide drawing palette if edit mode is turned off
+             isDrawingPaletteVisible = false;
+             drawingPalette.style.display = 'none';
+             addLabelToggleBtn.style.background = '#2a2f3a';
         };
     }
-    
+   
     mapFileInput.addEventListener('change', e => e.target.files[0] && onMapFileSelect(e.target.files[0]));
     waypointFileInput.addEventListener('change', e => {
         if (e.target.files[0]) {
@@ -1788,6 +1929,12 @@
     saveWaypointsBtn.addEventListener('click', saveWaypointsToDB);
     editBtn.addEventListener('click', toggleEditMode);
     viewSelect.addEventListener('change', () => setView(viewSelect.value));
+    
+    addLabelToggleBtn.addEventListener('click', () => {
+        isDrawingPaletteVisible = !isDrawingPaletteVisible;
+        drawingPalette.style.display = isDrawingPaletteVisible ? 'flex' : 'none';
+        addLabelToggleBtn.style.background = isDrawingPaletteVisible ? '#5476ff' : '#2a2f3a';
+    });
 
     lockRotationBtn.addEventListener('click', () => {
         isRotationLocked = !isRotationLocked;
@@ -1797,7 +1944,7 @@
         lockRotationBtn.textContent = isRotationLocked ? 'Unlock Rotation' : 'Lock Rotation';
         lockRotationBtn.style.background = isRotationLocked ? '#5476ff' : '#2a2f3a';
     });
-    
+   
     const editModeButtons = { 
         add: document.getElementById('edit-add'), 
         select: document.getElementById('edit-select'), 
@@ -1817,7 +1964,7 @@
             Object.values(editModeButtons).forEach(btn => btn.classList.remove('active')); 
             button.classList.add('active'); 
             app.classList.toggle('delete-mode', mode === 'delete'); 
-            
+           
             // Reset selection state when changing modes
             clearSelection();
             updateActivePanels();
@@ -1832,17 +1979,39 @@
             } 
         }); 
     });
+
+    // --- Drawing Palette Button Listeners ---
+    const drawingToolButtons = {
+        rect: document.getElementById('tool-rect'),
+        oval: document.getElementById('tool-oval'),
+        triangle: document.getElementById('tool-triangle'),
+        arrow: document.getElementById('tool-arrow'),
+        pentagon: document.getElementById('tool-pentagon'),
+        star: document.getElementById('tool-star'),
+        select: document.getElementById('tool-select'),
+        delete: document.getElementById('tool-delete'),
+    };
     
-    renderer.domElement.addEventListener('pointerdown', onPointerDown);
+    Object.entries(drawingToolButtons).forEach(([tool, button]) => {
+        button.addEventListener('click', () => {
+            currentTool = tool;
+            Object.values(drawingToolButtons).forEach(btn => btn.classList.remove('active'));
+            button.classList.add('active');
+            app.classList.toggle('delete-mode', tool === 'delete');
+        });
+    });
+
+   
+    renderer.domElement.addEventListener('pointerdown', onPointerDown, true);
     renderer.domElement.addEventListener('pointermove', onPointerMove);
     renderer.domElement.addEventListener('pointerup', onPointerUp);
-    
+   
     function updateCameraModeIndicator(e) {
         if (!isCameraOverrideActive || viewSelect.value === 'perspective') {
             cameraModeIndicator.style.display = 'none';
             return;
         }
-        
+       
         if (e.ctrlKey && e.shiftKey) {
             controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE; // Orbit
             cameraModeIndicator.textContent = "Camera Mode: Pan";
@@ -1858,26 +2027,20 @@
         const activeElement = document.activeElement;
         const isInputActive = activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'SELECT');
 
-        // Prevent global shortcuts if an input is focused
-        if (isInputActive) {
-            if (e.key === 'Backspace' || e.key === 'Delete') {
-                // Allow default input behavior
-                return;
-            }
-        }
+        if (isInputActive && e.key !== 'Escape') return;
 
         if (e.key === 'Delete' || e.key === 'Backspace') {
-            if (editMode && selectedIndices.size > 0) {
+            if (selectedShape) {
+                deleteSelectedShape();
+            } else if (editMode && selectedIndices.size > 0) {
                 deleteSelectedPoints();
             }
         }
         if (e.ctrlKey && e.key.toLowerCase() === 'z') {
             e.preventDefault();
-            if (isInputActive) return; // Prevent undo while typing
             if (e.shiftKey) redo(); else undo();
         } else if (e.ctrlKey && e.key.toLowerCase() === 'y') {
             e.preventDefault();
-            if (isInputActive) return; // Prevent redo while typing
             redo();
         }
 
@@ -1911,11 +2074,13 @@
         const center = box.getCenter(new THREE.Vector3());
         const size = box.getSize(new THREE.Vector3());
         const maxDim = Math.max(size.x, size.y, size.z) || 10;
-        
+       
         const currentWaypointSize = dynamicPointSize;
 
         if (viewType === 'perspective') {
-            camera = new THREE.PerspectiveCamera(60, aspect, 0.01, 10000);
+            const near = Math.max(maxDim * 0.001, 0.01);
+            const far = maxDim * 100;
+            camera = new THREE.PerspectiveCamera(60, aspect, near, far);
             camera.up.set(0, 0, 1);
             const camDist = maxDim * 1.5;
             camera.position.copy(center).add(new THREE.Vector3(camDist * 0.7, -camDist * 0.7, camDist * 0.7));
@@ -1924,7 +2089,7 @@
             const orthoSize = maxDim * 0.6;
             camera = new THREE.OrthographicCamera(-orthoSize * aspect, orthoSize * aspect, orthoSize, -orthoSize, -maxDim * 5, maxDim * 5);
             camera.up.set(0, 0, 1);
-            
+           
             if (viewType === 'top') {
                 camera.position.set(center.x, center.y, center.z + maxDim);
                 raycastPlane.set(new THREE.Vector3(0, 0, 1), center.z); 
@@ -1938,11 +2103,11 @@
                 raycastPlane.set(new THREE.Vector3(-1, 0, 0), -center.x); 
             }
         }
-        
+       
         if (viewType !== 'front' && viewType !== 'side') {
              camera.lookAt(center);
         }
-        
+       
         controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
         controls.target.copy(center);
@@ -1959,9 +2124,9 @@
             controls.minPolarAngle = Math.PI / 2;
             controls.maxPolarAngle = Math.PI / 2;
         }
-        
+       
         hintMain.innerHTML = 'Orbit: Left-drag • Pan: Right-drag • Zoom: Wheel';
-        
+       
         dynamicPointSize = Math.max(maxDim / 800, 0.02);
         document.getElementById('waypoint-size').value = dynamicPointSize;
         updateWaypointVisuals();
@@ -1988,7 +2153,7 @@
       }
       renderer.render(scene, camera);
     }
-    
+   
     window.addEventListener('resize', () => {
         if (!camera) return;
         const aspect = window.innerWidth / window.innerHeight;
@@ -2014,3 +2179,5 @@
   </script>
 </body>
 </html>
+
+
