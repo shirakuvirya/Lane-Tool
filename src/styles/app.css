@@ -1,0 +1,269 @@
+:root {
+    --bg-dark: #0b0e14;
+    --bg-panel: #1a1d26;
+    --bg-control: #2a2f3a;
+    --border-color: #3d4a66;
+    --text-light: #e0e5f0;
+    --text-medium: #a0a8b8;
+    --accent-blue: #5476ff;
+    --accent-blue-hover: #708fff;
+    --accent-green: #4caf50;
+    --accent-red: #f44336;
+    --accent-yellow: #ffeb3b;
+    --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html, body {
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    font-family: var(--font-family);
+    background-color: var(--bg-dark);
+    color: var(--text-light);
+    font-size: 14px;
+}
+
+#app {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    cursor: default;
+}
+
+#app.delete-mode { cursor: crosshair; }
+#app.draggable { cursor: grabbing; }
+#app.shape-move { cursor: move; }
+
+/* --- Loader & Selection --- */
+#loader {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
+    padding: 15px 25px;
+    border-radius: 8px;
+    font-size: 1.2em;
+    z-index: 1000;
+    display: none;
+}
+
+#selection-box {
+    position: fixed;
+    border: 1px dashed var(--accent-blue);
+    background-color: rgba(84, 118, 255, 0.2);
+    z-index: 999;
+    display: none;
+    pointer-events: none;
+}
+
+/* --- Generic Controls --- */
+.control-btn, .file-label {
+    background-color: var(--bg-control);
+    border: 1px solid var(--border-color);
+    color: var(--text-light);
+    padding: 8px 12px;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.2s, border-color 0.2s;
+    font-size: 1em;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+}
+
+.control-btn:hover, .file-label:hover {
+    background-color: var(--accent-blue);
+    border-color: var(--accent-blue-hover);
+}
+
+.control-btn:disabled {
+    background-color: #222;
+    color: #555;
+    cursor: not-allowed;
+    border-color: #333;
+}
+
+.file-label input[type="file"] {
+    display: none;
+}
+
+/* --- Top Controls --- */
+#main-controls {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    right: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background-color: var(--bg-panel);
+    padding: 8px;
+    border-radius: 8px;
+    z-index: 100;
+    border: 1px solid var(--border-color);
+    gap: 10px;
+}
+
+.control-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+#main-controls select {
+    background-color: var(--bg-control);
+    border: 1px solid var(--border-color);
+    color: var(--text-light);
+    padding: 7px;
+    border-radius: 5px;
+}
+
+/* --- Left Edit Toolbar & Drawing Palette --- */
+#edit-toolbar, #drawing-palette {
+    position: fixed;
+    top: 75px;
+    left: 10px;
+    background-color: var(--bg-panel);
+    padding: 10px;
+    border-radius: 8px;
+    z-index: 100;
+    border: 1px solid var(--border-color);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.tool-group { display: flex; gap: 8px; }
+
+#edit-toolbar button, #drawing-palette button {
+    flex-grow: 1;
+    padding: 8px;
+    background-color: var(--bg-control);
+    border: 1px solid var(--border-color);
+    color: var(--text-light);
+    border-radius: 5px;
+    cursor: pointer;
+}
+#edit-toolbar button.active, #drawing-palette button.active {
+    background-color: var(--accent-blue);
+    border-color: var(--accent-blue-hover);
+}
+
+#edit-mode-hint-container {
+    background-color: var(--bg-dark);
+    padding: 8px;
+    border-radius: 4px;
+    text-align: center;
+    font-size: 0.9em;
+    color: var(--text-medium);
+}
+
+#drawing-palette .tool-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; }
+#drawing-palette .input-group { display: flex; align-items: center; gap: 8px; }
+#drawing-palette input[type="text"] {
+    width: 100%;
+    background: var(--bg-control);
+    border: 1px solid var(--border-color);
+    color: var(--text-light);
+    padding: 5px;
+    border-radius: 4px;
+}
+
+/* --- Right Info Panel --- */
+.side-panel {
+    position: fixed;
+    top: 75px;
+    right: 10px;
+    width: 280px;
+    background-color: var(--bg-panel);
+    padding: 15px;
+    border-radius: 8px;
+    z-index: 100;
+    border: 1px solid var(--border-color);
+    max-height: calc(100vh - 90px);
+    overflow-y: auto;
+}
+
+.panel-section {
+    display: none; /* Controlled by JS */
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 15px;
+    margin-bottom: 15px;
+}
+.panel-section:last-child { border-bottom: none; margin-bottom: 0; }
+.panel-section.visible { display: block; }
+
+.side-panel h3, .side-panel h4 { margin-bottom: 10px; color: var(--text-light); }
+.coord-display { display: flex; flex-direction: column; gap: 5px; }
+.coord-row { display: flex; justify-content: space-between; }
+.coord-row label { color: var(--text-medium); }
+
+.side-panel button, .side-panel input, .side-panel select {
+    width: 100%;
+    margin-top: 10px;
+    padding: 8px;
+    background: var(--bg-control);
+    border: 1px solid var(--border-color);
+    color: var(--text-light);
+    border-radius: 4px;
+}
+.slider-group { display: flex; align-items: center; gap: 10px; }
+#radial-strength-value { width: 60px; text-align: right; }
+#zone-list { margin-top: 10px; display: flex; flex-direction: column; gap: 5px; }
+.zone-item { display: flex; align-items: center; gap: 8px; background: var(--bg-dark); padding: 5px; border-radius: 4px; }
+.zone-color-swatch { width: 16px; height: 16px; border-radius: 3px; border: 1px solid var(--border-color); }
+
+/* --- Bottom Display Panel --- */
+#display-panel {
+    position: fixed;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: var(--bg-panel);
+    padding: 8px 15px;
+    border-radius: 8px;
+    z-index: 100;
+    border: 1px solid var(--border-color);
+    display: none;
+    align-items: center;
+    gap: 20px;
+}
+#display-panel.visible { display: flex; }
+#display-panel .control-group { display: flex; align-items: center; gap: 8px; }
+#display-panel input[type="range"] { width: 120px; }
+
+/* --- Hints & Indicators --- */
+#hint-container {
+    position: fixed;
+    bottom: 15px;
+    left: 15px;
+    background: rgba(0,0,0,0.6);
+    padding: 8px 12px;
+    border-radius: 5px;
+    z-index: 90;
+    color: var(--text-medium);
+}
+#camera-mode-indicator {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(84, 118, 255, 0.8);
+    color: white;
+    padding: 10px 20px;
+    border-radius: 8px;
+    z-index: 200;
+    display: none;
+    pointer-events: none;
+}
