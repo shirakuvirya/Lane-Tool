@@ -14,162 +14,80 @@ html, body {
 }
 
 /* Main 3D Viewport */
-#app {
-    position: fixed;
-    inset: 0;
-    background: #0b0e14;
-    z-index: 1;
-}
+#app { position: fixed; inset: 0; background: #0b0e14; z-index: 1; }
+#app.delete-mode { cursor: crosshair; }
+#app.draggable { cursor: grabbing; }
+#app.shape-move { cursor: move; }
 
 /* Selection Box */
 #selection-box {
-    position: fixed;
-    background: rgba(84, 118, 255, 0.2);
+    position: fixed; background: rgba(84, 118, 255, 0.2);
     border: 1px solid rgba(131, 158, 255, 0.8);
-    pointer-events: none;
-    display: none;
-    z-index: 1000;
+    pointer-events: none; display: none; z-index: 1000;
 }
 
 /* Loading Indicator */
 #loader {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    display: none;
-    background: rgba(0, 0, 0, 0.9);
-    color: #4a9eff;
-    padding: 20px 30px;
-    border-radius: 12px;
-    font-size: 16px;
-    font-weight: 600;
-    backdrop-filter: blur(10px);
-    border: 2px solid rgba(74, 158, 255, 0.3);
-    z-index: 1000;
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    display: none; background: rgba(0, 0, 0, 0.9); color: #4a9eff;
+    padding: 20px 30px; border-radius: 12px; font-size: 16px; font-weight: 600;
+    backdrop-filter: blur(10px); border: 2px solid rgba(74, 158, 255, 0.3); z-index: 1000;
 }
 
 /* Top Navigation Tabs */
 #top-tabs {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 60px;
-    background: rgba(15, 20, 28, 0.95);
-    border-bottom: 2px solid rgba(74, 158, 255, 0.2);
-    backdrop-filter: blur(15px);
-    z-index: 100;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 20px;
+    position: fixed; top: 0; left: 0; right: 0; height: 60px;
+    background: rgba(15, 20, 28, 0.95); border-bottom: 2px solid rgba(74, 158, 255, 0.2);
+    backdrop-filter: blur(15px); z-index: 100; display: flex;
+    align-items: center; justify-content: space-between; padding: 0 20px;
 }
-
-.tab-nav {
-    display: flex;
-    gap: 4px;
-}
-
+.tab-nav { display: flex; gap: 4px; }
 .tab-button {
-    background: rgba(45, 55, 68, 0.6);
-    border: 1px solid rgba(74, 158, 255, 0.3);
-    border-radius: 8px;
-    color: #a0b0d0;
-    padding: 10px 20px;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.25s ease;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 120px;
-    justify-content: center;
+    background: rgba(45, 55, 68, 0.6); border: 1px solid rgba(74, 158, 255, 0.3);
+    border-radius: 8px; color: #a0b0d0; padding: 10px 20px; font-size: 14px;
+    font-weight: 600; cursor: pointer; transition: all 0.25s ease;
+    display: flex; align-items: center; gap: 8px; min-width: 120px; justify-content: center;
 }
-
 .tab-button:hover:not(:disabled) {
-    background: rgba(74, 158, 255, 0.1);
-    color: #4a9eff;
-    transform: translateY(-2px);
+    background: rgba(74, 158, 255, 0.1); color: #4a9eff; transform: translateY(-2px);
 }
-
 .tab-button.active {
-    background: linear-gradient(135deg, #4a9eff, #0066cc);
-    color: #ffffff;
-    border-color: #4a9eff;
-    box-shadow: 0 4px 15px rgba(74, 158, 255, 0.3);
+    background: linear-gradient(135deg, #4a9eff, #0066cc); color: #ffffff;
+    border-color: #4a9eff; box-shadow: 0 4px 15px rgba(74, 158, 255, 0.3);
 }
-
-.tab-button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
+.tab-button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* File Control Section */
-#file-control {
-    display: flex;
-    gap: 12px;
-}
-
+#file-control { display: flex; gap: 12px; }
 .file-label, .control-btn {
-    background: linear-gradient(135deg, #1a2332, #2a3441);
-    border: 1px solid #4a9eff;
-    border-radius: 8px;
-    padding: 10px 16px;
-    color: #4a9eff;
-    cursor: pointer;
-    font-size: 13px;
-    font-weight: 600;
-    transition: all 0.25s ease;
-    user-select: none;
-    text-align: center;
-    min-width: 80px;
+    background: linear-gradient(135deg, #1a2332, #2a3441); border: 1px solid #4a9eff;
+    border-radius: 8px; padding: 10px 16px; color: #4a9eff; cursor: pointer;
+    font-size: 13px; font-weight: 600; transition: all 0.25s ease;
+    user-select: none; text-align: center; min-width: 80px;
 }
-
 .file-label:hover, .control-btn:hover:not(:disabled) {
-    background: linear-gradient(135deg, #2a3441, #364152);
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(74, 158, 255, 0.2);
-    color: #5aa6ff;
+    background: linear-gradient(135deg, #2a3441, #364152); transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(74, 158, 255, 0.2); color: #5aa6ff;
 }
-
 .control-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-    background: #222;
-    color: #555;
-    border-color: #333;
+    opacity: 0.5; cursor: not-allowed; background: #222; color: #555; border-color: #333;
 }
-
-input[type="file"] {
-    display: none;
-}
+input[type="file"] { display: none; }
 
 /* Side Panels */
 .side-panel {
-    position: fixed;
-    top: 70px;
-    bottom: 90px;
-    width: 340px;
-    background: rgba(15, 20, 28, 0.95);
-    border: 1px solid rgba(74, 158, 255, 0.2);
-    backdrop-filter: blur(15px);
-    z-index: 90;
-    overflow-y: auto;
-    border-radius: 12px;
+    position: fixed; top: 70px; bottom: 90px; width: 340px;
+    background: rgba(15, 20, 28, 0.95); border: 1px solid rgba(74, 158, 255, 0.2);
+    backdrop-filter: blur(15px); z-index: 90; overflow-y: auto; border-radius: 12px;
 }
 #edit-toolbar, #drawing-palette { left: 10px; }
 #info-panel { right: 10px; }
+#edit-toolbar { overflow: hidden; /* For containing the sliding panels */ }
 
 /* Panel Headers */
 .panel-header {
-    padding: 20px;
-    border-bottom: 1px solid rgba(74, 158, 255, 0.2);
-    background: rgba(74, 158, 255, 0.05);
-    position: sticky;
-    top: 0;
-    z-index: 1;
+    padding: 20px; border-bottom: 1px solid rgba(74, 158, 255, 0.2);
+    background: rgba(74, 158, 255, 0.05); position: sticky; top: 0; z-index: 10;
 }
 .panel-header h3 { margin: 0; color: #4a9eff; font-size: 18px; font-weight: 700; }
 
@@ -180,17 +98,14 @@ input[type="file"] {
     margin: 0 0 15px 0; color: #a0b0d0; font-size: 14px;
     font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
 }
-
-/* Tool Grid */
 .tool-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .history-grid { grid-template-columns: 1fr 1fr; }
 .draw-grid { grid-template-columns: repeat(3, 1fr); }
-
 .tool-button {
     background: rgba(45, 55, 68, 0.8); border: 1px solid rgba(74, 158, 255, 0.3);
     border-radius: 8px; color: #a0b0d0; padding: 12px 8px; font-size: 12px;
-    font-weight: 600; cursor: pointer; transition: all 0.25s ease; display: flex;
-    align-items: center; gap: 8px; justify-content: center;
+    font-weight: 600; cursor: pointer; transition: all 0.25s ease;
+    display: flex; align-items: center; gap: 8px; justify-content: center;
 }
 .tool-button:hover:not(:disabled) {
     background: rgba(74, 158, 255, 0.1); color: #4a9eff;
@@ -206,11 +121,9 @@ input[type="file"] {
 .info-section { padding: 0 20px 20px; border-bottom: 1px solid rgba(255, 255, 255, 0.1); }
 .info-section:last-child { border-bottom: none; }
 .info-section h4 {
-    margin: 20px 0 15px 0; color: #a0b0d0; font-size: 14px; font-weight: 700;
-    text-transform: uppercase; letter-spacing: 0.5px;
+    margin: 20px 0 15px 0; color: #a0b0d0; font-size: 14px;
+    font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
 }
-
-/* Coordinate Display */
 .coord-display {
     background: rgba(74, 158, 255, 0.05); border: 1px solid rgba(74, 158, 255, 0.2);
     border-radius: 8px; padding: 15px;
@@ -241,19 +154,13 @@ input[type="file"] {
 }
 .control-group { display: flex; align-items: center; gap: 12px; font-size: 12px; font-weight: 600; }
 .control-group label { color: #4a9eff; font-weight: 700; }
-
-/* Form Controls */
 select, input[type="range"], input[type="text"], input[type="number"] {
     background: rgba(45, 55, 68, 0.9); border: 1px solid rgba(74, 158, 255, 0.3);
     border-radius: 6px; color: #eaeefb; font-size: 12px; transition: all 0.25s ease;
 }
 select, input[type="text"], input[type="number"] { padding: 6px 10px; font-weight: 600; }
-select:hover, input:hover { border-color: rgba(74, 158, 255, 0.5); background: rgba(45, 55, 68, 1); }
-select:focus, input:focus { outline: none; border-color: #4a9eff; box-shadow: 0 0 0 2px rgba(74, 158, 255, 0.25); }
-
 input[type="range"] {
-    -webkit-appearance: none; height: 4px;
-    background: linear-gradient(90deg, rgba(74, 158, 255, 0.2), rgba(74, 158, 255, 0.4));
+    -webkit-appearance: none; height: 4px; background: linear-gradient(90deg, rgba(74, 158, 255, 0.2), rgba(74, 158, 255, 0.4));
     border-radius: 2px; padding: 0; min-width: 100px; cursor: pointer;
 }
 input[type="range"]::-webkit-slider-thumb {
@@ -263,7 +170,29 @@ input[type="range"]::-webkit-slider-thumb {
 input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.15); }
 .small-btn { padding: 8px 10px !important; min-width: 40px; }
 
-/* --- NEW STYLES FOR INTEGRATION --- */
+/* --- NEW STYLES FOR LEFT PANEL TOOL FLOW --- */
+#edit-toolbar { position: relative; } /* Containing block for absolute children */
+.tool-options-view {
+    position: absolute; inset: 0;
+    background: rgba(15, 20, 28, 0.95); /* Same as panel to cover what's underneath */
+    z-index: 20;
+    display: flex; flex-direction: column;
+    opacity: 0; visibility: hidden; transition: opacity 0.2s ease, visibility 0.2s;
+}
+.tool-options-view[style*="block"] { opacity: 1; visibility: visible; }
+.tool-options-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 20px; border-bottom: 1px solid rgba(74, 158, 255, 0.2);
+    background: rgba(74, 158, 255, 0.05);
+}
+.tool-options-header h4 { margin: 0; color: #4a9eff; font-size: 18px; font-weight: 700; }
+.close-tool-options {
+    background: none; border: none; font-size: 24px; color: #a0b0d0;
+    cursor: pointer; line-height: 1; padding: 0 5px; transition: color 0.2s;
+}
+.close-tool-options:hover { color: #fff; }
+
+/* Other New Styles */
 #camera-mode-indicator {
     position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
     background: rgba(74, 158, 255, 0.8); color: white; padding: 10px 20px;
@@ -286,7 +215,7 @@ input[type="range"]::-webkit-slider-thumb:hover { transform: scale(1.15); }
     position: fixed; bottom: 20px; right: 20px; width: 40px; height: 40px;
     border-radius: 50%; background: linear-gradient(135deg, #1a2332, #2a3441);
     border: 1px solid #4a9eff; color: #4a9eff; font-size: 20px; cursor: pointer; z-index: 100;
-    display: flex; align-items: center; justify-content: center;
+    display: flex; align-items: center; justify-content: center; transition: all 0.2s ease;
 }
 .display-toggle-btn.active { background: linear-gradient(135deg, #4a9eff, #0066cc); color: #fff; }
 

@@ -46,26 +46,76 @@
     </div>
 
     <div id="edit-toolbar" class="side-panel" style="display: none;">
-        <div class="panel-header"><h3>Waypoint Tools</h3></div>
-        <div class="tool-section">
-            <h4>History</h4>
-            <div class="tool-grid history-grid">
-                 <button id="edit-undo" class="tool-button" title="Undo (Ctrl+Z)" disabled>↩️ Undo</button>
-                 <button id="edit-redo" class="tool-button" title="Redo (Ctrl+Y)" disabled>↪️ Redo</button>
+        <div id="main-tools-view">
+            <div class="panel-header"><h3>Waypoint Tools</h3></div>
+            <div class="tool-section">
+                <h4>History</h4>
+                <div class="tool-grid history-grid">
+                     <button id="edit-undo" class="tool-button" title="Undo (Ctrl+Z)" disabled>↩️ Undo</button>
+                     <button id="edit-redo" class="tool-button" title="Redo (Ctrl+Y)" disabled>↪️ Redo</button>
+                </div>
+            </div>
+            <div class="tool-section">
+                <h4>Edit Tools</h4>
+                <div class="tool-grid">
+                    <button id="edit-select" class="tool-button active" title="Select points">🎯 Select</button>
+                    <button id="edit-add" class="tool-button" title="Add waypoints">➕ Add</button>
+                    <button id="edit-delete" class="tool-button" title="Remove waypoints">🗑️ Remove</button>
+                    <button id="edit-move" class="tool-button" title="Move waypoints">🔄 Move</button>
+                    <button id="edit-interpolate" class="tool-button" title="Interpolate">📈 Interpolate</button>
+                    <button id="edit-zone" class="tool-button" title="Define zones">🏞️ Zone</button>
+                </div>
+            </div>
+            <div class="tool-section"><span id="edit-mode-hint" class="shortcuts-info">Click a point or drag to select.</span></div>
+        </div>
+
+        <div id="move-panel" class="tool-options-view" style="display: none;">
+            <div class="tool-options-header">
+                <h4>Move Tools</h4>
+                <button class="close-tool-options" title="Back to tools" data-tool="select">&times;</button>
+            </div>
+            <div class="tool-section">
+                <p id="move-info" class="instructions">Select points to move.</p>
+                <div class="actions">
+                    <button id="move-select-box" class="action-btn">Box Select</button>
+                    <button id="move-select-path" class="action-btn">Path Select</button>
+                    <button id="generate-connections" class="action-btn success" disabled>🔗 Auto-Connect</button>
+                </div>
             </div>
         </div>
-        <div class="tool-section">
-            <h4>Edit Tools</h4>
-            <div class="tool-grid">
-                <button id="edit-select" class="tool-button active" title="Select points">🎯 Select</button>
-                <button id="edit-add" class="tool-button" title="Add waypoints">➕ Add</button>
-                <button id="edit-delete" class="tool-button" title="Remove waypoints">🗑️ Remove</button>
-                <button id="edit-move" class="tool-button" title="Move waypoints">🔄 Move</button>
-                <button id="edit-interpolate" class="tool-button" title="Interpolate">📈 Interpolate</button>
-                <button id="edit-zone" class="tool-button" title="Define zones">🏞️ Zone</button>
+        <div id="interpolation-panel" class="tool-options-view" style="display: none;">
+            <div class="tool-options-header">
+                <h4>Interpolation</h4>
+                <button class="close-tool-options" title="Back to tools" data-tool="select">&times;</button>
+            </div>
+            <div class="tool-section">
+                <p id="interpolation-info" class="instructions">Click a start and end point.</p>
+                <div class="actions">
+                     <button id="linear-interpolate" class="action-btn success" disabled>Linear Interpolate</button>
+                </div>
+                <div class="slider-group">
+                    <label for="radial-strength">Radial:</label>
+                    <input type="range" id="radial-strength" min="-5" max="5" step="0.1" value="0" disabled>
+                    <input type="number" id="radial-strength-value" value="0.00" step="0.1" disabled>
+                </div>
             </div>
         </div>
-        <div class="tool-section"><span id="edit-mode-hint" class="shortcuts-info">Click a point or drag to select.</span></div>
+        <div id="zone-panel" class="tool-options-view" style="display: none;">
+            <div class="tool-options-header">
+                <h4>Zone Editor</h4>
+                <button class="close-tool-options" title="Back to tools" data-tool="select">&times;</button>
+            </div>
+            <div class="tool-section">
+                <p id="zone-info" class="instructions">Define a new zone.</p>
+                <input type="text" id="zone-name-input" placeholder="Enter zone name..." disabled>
+                <div class="actions">
+                    <button id="create-zone-btn" class="action-btn success" disabled>Create Zone</button>
+                    <button id="clear-zone-selection-btn" class="action-btn" style="display: none;">Clear</button>
+                </div>
+                <h4>Existing Zones</h4>
+                <div id="zone-list"></div>
+            </div>
+        </div>
     </div>
     
     <div id="drawing-palette" class="side-panel" style="display: none;">
@@ -101,7 +151,6 @@
 
     <div id="info-panel" class="side-panel right" style="display: none;">
         <div class="panel-header"><h3>Information</h3></div>
-        
         <div id="default-info-view" class="info-section">
             <h4>Selected Waypoint</h4>
             <div class="coord-display">
@@ -114,79 +163,19 @@
                 <div class="coord-row"><label>Yaw:</label><span id="info-yaw">-</span></div>
             </div>
         </div>
-        
-        <div id="move-panel" class="info-section" style="display: none;">
-            <h4>Move Tools</h4>
-            <p id="move-info" class="instructions">Select points to move.</p>
-            <div class="actions">
-                <button id="move-select-box" class="action-btn">Box Select</button>
-                <button id="move-select-path" class="action-btn">Path Select</button>
-                <button id="generate-connections" class="action-btn success" disabled>🔗 Auto-Connect</button>
-            </div>
-        </div>
-        <div id="interpolation-panel" class="info-section" style="display: none;">
-            <h4>Interpolation</h4>
-            <p id="interpolation-info" class="instructions">Click a start and end point.</p>
-            <div class="actions">
-                 <button id="linear-interpolate" class="action-btn success" disabled>Linear Interpolate</button>
-            </div>
-            <div class="slider-group">
-                <label for="radial-strength">Radial:</label>
-                <input type="range" id="radial-strength" min="-5" max="5" step="0.1" value="0" disabled>
-                <input type="number" id="radial-strength-value" value="0.00" step="0.1" disabled>
-            </div>
-        </div>
-        <div id="zone-panel" class="info-section" style="display: none;">
-            <h4>Zone Editor</h4>
-            <p id="zone-info" class="instructions">Define a new zone.</p>
-            <input type="text" id="zone-name-input" placeholder="Enter zone name..." disabled>
-            <div class="actions">
-                <button id="create-zone-btn" class="action-btn success" disabled>Create Zone</button>
-                <button id="clear-zone-selection-btn" class="action-btn" style="display: none;">Clear</button>
-            </div>
-            <h4>Existing Zones</h4>
-            <div id="zone-list"></div>
-        </div>
     </div>
 
     <div id="display-panel">
         <div id="bottom-controls">
-            <div class="control-group">
-                <label>Map Size:</label>
-                <input type="range" id="map-point-size" min="0.1" max="5" step="0.1" value="0.5">
-            </div>
-            <div class="control-group">
-                <label>Voxel Size:</label>
-                <input type="range" id="voxel-size" min="0" max="2" step="0.05" value="0">
-            </div>
-            <div class="control-group">
-                <label>WP Size:</label>
-                <input type="range" id="waypoint-size" min="0.01" max="0.5" step="0.005" value="0.05">
-            </div>
-            <div class="control-group">
-                <label>Color:</label>
-                <select id="color-mode">
-                    <option value="default">Default</option>
-                    <option value="height">Height (Z)</option>
-                    <option value="range">Range</option>
-                </select>
-            </div>
-            <div class="control-group">
-                <label>View:</label>
-                <select id="view-select">
-                    <option value="perspective">Perspective</option>
-                    <option value="top">Top</option>
-                    <option value="front">Front</option>
-                    <option value="side">Side</option>
-                </select>
-            </div>
-            <div class="control-group">
-                <button id="lock-rotation" class="control-btn small-btn">🔒</button>
-                <button id="generate-path" class="control-btn small-btn" disabled>🛣️</button>
-            </div>
+            <div class="control-group"><label>Map Size:</label><input type="range" id="map-point-size" min="0.1" max="5" step="0.1" value="0.5"></div>
+            <div class="control-group"><label>Voxel Size:</label><input type="range" id="voxel-size" min="0" max="2" step="0.05" value="0"></div>
+            <div class="control-group"><label>WP Size:</label><input type="range" id="waypoint-size" min="0.01" max="0.5" step="0.005" value="0.05"></div>
+            <div class="control-group"><label>Color:</label><select id="color-mode"><option value="default">Default</option><option value="height">Height (Z)</option><option value="range">Range</option></select></div>
+            <div class="control-group"><label>View:</label><select id="view-select"><option value="perspective">Perspective</option><option value="top">Top</option><option value="front">Front</option><option value="side">Side</option></select></div>
+            <div class="control-group"><button id="lock-rotation" class="control-btn small-btn">🔒</button><button id="generate-path" class="control-btn small-btn" disabled>🛣️</button></div>
         </div>
     </div>
-    <button id="display-toggle" class="display-toggle-btn">⚙️</button>
+    <button id="display-toggle" class="display-toggle-btn active">⚙️</button>
     
     <script src="ui-adapter.js"></script>
     <script type="module" src="app.js"></script>
