@@ -1,12 +1,10 @@
 /**
  * ViryaOSLaneStudio - Professional Point Cloud Viewer with Enhanced Layout Tools
- * 
- * A comprehensive 3D web application for visualizing point clouds, editing waypoints,
+ * * A comprehensive 3D web application for visualizing point clouds, editing waypoints,
  * generating lane geometries, and creating interactive annotations. Built with Three.js
  * and featuring direct manipulation interfaces, database integration, and real-time
  * collaborative editing capabilities.
- * 
- * Key Features:
+ * * Key Features:
  * - Point cloud visualization (PLY/PCD format support)
  * - Waypoint database management with SQLite integration
  * - Lane generation with customizable width parameters
@@ -14,15 +12,8 @@
  * - Real-time coordinate transformation (ROS ↔ Three.js)
  * - Advanced interpolation algorithms (linear and radial)
  * - Multi-view support (orbit, top-down orthographic)
- * 
- * Architecture:
- * - Modular class-based design with clear separation of concerns
- * - Event-driven interaction model with comprehensive state management
- * - Efficient memory management with proper disposal patterns
- * - Scalable rendering pipeline with dynamic LOD adjustment
- * 
- * @author ViryaOSLaneStudio Development Team
- * @version 2.0.0
+ * * @author ViryaOSLaneStudio Development Team
+ * @version 2.0.1
  * @license MIT
  */
 
@@ -273,8 +264,7 @@ class ViryaOSLaneStudio {
     /**
      * Initialize the complete ViryaOSLaneStudio system
      * Sets up rendering, database, UI, and starts the main application loop
-     * 
-     * @async
+     * * @async
      * @throws {Error} If critical components fail to initialize
      */
     async init() {
@@ -316,8 +306,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Initialize the SQLite database engine for waypoint persistence
-     * 
-     * @async
+     * * @async
      * @returns {Promise<boolean>} Success status of database initialization
      */
     async initDatabase() {
@@ -340,8 +329,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Setup the WebGL renderer with optimized settings
-     * 
-     * @param {HTMLElement} container - DOM container for the renderer
+     * * @param {HTMLElement} container - DOM container for the renderer
      */
     setupRenderer(container) {
         this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -393,8 +381,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Create a 3D text label at the specified position
-     * 
-     * @param {string} text - Text content for the label
+     * * @param {string} text - Text content for the label
      * @param {THREE.Vector3} position - World position for text placement
      * @returns {THREE.Mesh|null} Created text mesh or null if font not loaded
      */
@@ -441,8 +428,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Update existing text mesh with new content
-     * 
-     * @param {THREE.Mesh} textMesh - Text mesh to update
+     * * @param {THREE.Mesh} textMesh - Text mesh to update
      * @param {string} newText - New text content
      */
     updateText(textMesh, newText) {
@@ -480,8 +466,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Create geometric shapes based on type and dimensions
-     * 
-     * @param {string} type - Shape type (square, oval, arrow, line)
+     * * @param {string} type - Shape type (square, oval, arrow, line)
      * @param {number} width - Shape width
      * @param {number} height - Shape height
      * @returns {THREE.ShapeGeometry|null} Created geometry or null if invalid type
@@ -527,8 +512,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Add a new shape to the scene
-     * 
-     * @param {string} type - Shape type
+     * * @param {string} type - Shape type
      * @param {THREE.Vector3} startPos - Starting position
      * @param {THREE.Vector3} endPos - Ending position
      * @param {boolean} isGhost - Whether this is a preview shape
@@ -600,8 +584,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Select a shape for editing operations
-     * 
-     * @param {THREE.Mesh} shape - Shape to select
+     * * @param {THREE.Mesh} shape - Shape to select
      */
     selectShape(shape) {
         if (this.selectedShape === shape) return;
@@ -630,8 +613,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Add visual outline to selected shape
-     * 
-     * @param {THREE.Mesh} shape - Shape to outline
+     * * @param {THREE.Mesh} shape - Shape to outline
      */
     addSelectionOutline(shape) {
         if (shape.selectionOutline) return;
@@ -642,8 +624,7 @@ class ViryaOSLaneStudio {
     
     /**
      * Remove visual outline from shape
-     * 
-     * @param {THREE.Mesh} shape - Shape to remove outline from
+     * * @param {THREE.Mesh} shape - Shape to remove outline from
      */
     removeSelectionOutline(shape) {
         if (shape.selectionOutline) {
@@ -656,8 +637,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Create resize handles for the selected shape
-     * 
-     * @param {THREE.Mesh} shape - Shape to create handles for
+     * * @param {THREE.Mesh} shape - Shape to create handles for
      */
     createResizeHandles(shape) {
         this.clearResizeHandles();
@@ -692,8 +672,7 @@ class ViryaOSLaneStudio {
     
     /**
      * Update resize handle positions after shape transformation
-     * 
-     * @param {THREE.Mesh} shape - Shape whose handles need updating
+     * * @param {THREE.Mesh} shape - Shape whose handles need updating
      */
     updateResizeHandlePositions(shape) {
         if (this.resizeHandles.length === 0) return;
@@ -727,8 +706,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Update the style control UI based on selected shape
-     * 
-     * @param {THREE.Mesh} shape - Selected shape to update UI for
+     * * @param {THREE.Mesh} shape - Selected shape to update UI for
      */
     updateStyleUI(shape) {
         if (!shape) return;
@@ -760,8 +738,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Show text input modal for creating or editing text
-     * 
-     * @param {boolean} isEdit - Whether this is editing existing text
+     * * @param {boolean} isEdit - Whether this is editing existing text
      * @param {string} existingText - Current text content if editing
      */
     showTextInputModal(isEdit = false, existingText = '') {
@@ -819,10 +796,9 @@ class ViryaOSLaneStudio {
     // ====================================================================
 
     /**
-     * Generate lane geometry from waypoint data
-     * Creates a 3D mesh representing the vehicle path with variable width
-     * 
-     * @async
+     * Generate lane geometry from waypoint data.
+     * Creates a dark grey mesh for the fill and two white lines for the boundaries.
+     * * @async
      */
     async drawLane() {
         this.clearLane();
@@ -857,15 +833,12 @@ class ViryaOSLaneStudio {
             let normal, miterScale = 1.0;
 
             if (i === 0) {
-                // First point: use direction to next point
                 const dir_out = waypointsData[i+1].pos.clone().sub(p_curr).normalize();
                 normal = new THREE.Vector3(-dir_out.y, dir_out.x, 0).normalize();
             } else if (i === waypointsData.length - 1) {
-                // Last point: use direction from previous point
                 const dir_in = p_curr.clone().sub(waypointsData[i-1].pos).normalize();
                 normal = new THREE.Vector3(-dir_in.y, dir_in.x, 0).normalize();
             } else {
-                // Middle points: use miter joint between adjacent segments
                 const dir_in = p_curr.clone().sub(waypointsData[i-1].pos).normalize();
                 const dir_out = waypointsData[i+1].pos.clone().sub(p_curr).normalize();
                 const normal_in = new THREE.Vector3(-dir_in.y, dir_in.x, 0);
@@ -879,34 +852,53 @@ class ViryaOSLaneStudio {
             rightVerts.push(p_curr.clone().sub(normal.clone().multiplyScalar(halfWidthRight * miterScale)));
         }
 
-        // Create vertices array for BufferGeometry
-        const vertices = [];
+        // 1. CREATE THE DARK GREY FILL MESH
+        const fillVertices = [];
         for (let i = 0; i < waypointsData.length; i++) {
-            vertices.push(leftVerts[i].x, leftVerts[i].y, leftVerts[i].z);
-            vertices.push(rightVerts[i].x, rightVerts[i].y, rightVerts[i].z);
+            fillVertices.push(leftVerts[i].x, leftVerts[i].y, leftVerts[i].z);
+            fillVertices.push(rightVerts[i].x, rightVerts[i].y, rightVerts[i].z);
         }
 
-        // Create triangular faces between adjacent waypoint pairs
         const indices = [];
         for (let i = 0; i < waypointsData.length - 1; i++) {
             const i2 = i * 2;
             indices.push(i2, i2 + 1, i2 + 2, i2 + 2, i2 + 1, i2 + 3);
         }
 
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-        geometry.setIndex(indices);
+        const fillGeometry = new THREE.BufferGeometry();
+        fillGeometry.setAttribute('position', new THREE.Float32BufferAttribute(fillVertices, 3));
+        fillGeometry.setIndex(indices);
 
-        const material = new THREE.MeshBasicMaterial({
-            color: 0x559FFF,
+        const fillMaterial = new THREE.MeshBasicMaterial({
+            color: 0x404040, // Dark grey color
             transparent: true,
             opacity: 0.8,
             side: THREE.DoubleSide
         });
 
-        const mesh = new THREE.Mesh(geometry, material);
-        mesh.renderOrder = -1; // Render behind other objects
-        this.pathGroup.add(mesh);
+        const fillMesh = new THREE.Mesh(fillGeometry, fillMaterial);
+        fillMesh.renderOrder = -1; // Render behind other objects
+        this.pathGroup.add(fillMesh);
+
+        // 2. CREATE THE WHITE BOUNDARY LINES
+        const boundaryMaterial = new THREE.LineBasicMaterial({
+            color: 0xffffff, // White color
+            transparent: true,
+            opacity: 0.9,
+            depthTest: false // Ensure lines are visible
+        });
+
+        // Left boundary
+        const leftLineGeometry = new THREE.BufferGeometry().setFromPoints(leftVerts);
+        const leftLine = new THREE.Line(leftLineGeometry, boundaryMaterial);
+        leftLine.renderOrder = 0; // Render on top of the fill
+        this.pathGroup.add(leftLine);
+
+        // Right boundary
+        const rightLineGeometry = new THREE.BufferGeometry().setFromPoints(rightVerts);
+        const rightLine = new THREE.Line(rightLineGeometry, boundaryMaterial);
+        rightLine.renderOrder = 0; // Render on top of the fill
+        this.pathGroup.add(rightLine);
     }
 
     /**
@@ -923,8 +915,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Generate lane geometry with uniform width for all waypoints
-     * 
-     * @async
+     * * @async
      */
     async generateLane() {
         if (!this.db) {
@@ -952,8 +943,7 @@ class ViryaOSLaneStudio {
     /**
      * Handle pointer down for waypoint move operations
      * Supports both single point and marquee selection
-     * 
-     * @param {number} clickedIndex - Index of clicked waypoint (-1 if none)
+     * * @param {number} clickedIndex - Index of clicked waypoint (-1 if none)
      * @param {PointerEvent} event - Original pointer event
      */
     handleMovePointerDown(clickedIndex, event) {
@@ -1029,8 +1019,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Set up camera and controls for different view modes
-     * 
-     * @param {string} viewType - View mode ('orbit' or 'top')
+     * * @param {string} viewType - View mode ('orbit' or 'top')
      */
     setView(viewType) {
         if (this.controls) this.controls.dispose();
@@ -1103,8 +1092,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Update point cloud coloring based on selected mode
-     * 
-     * @param {string} colorMode - Color mode ('height' or 'default')
+     * * @param {string} colorMode - Color mode ('height' or 'default')
      */
     updatePointCloudColors(colorMode) {
         if (!this.mapObject || !this.originalMapGeometry) return;
@@ -1173,8 +1161,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Load point cloud file (PLY or PCD format)
-     * 
-     * @async
+     * * @async
      * @param {File} file - Point cloud file to load
      * @returns {Promise} Loading completion promise
      */
@@ -1226,8 +1213,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Apply ROS to Three.js coordinate system transformation
-     * 
-     * @param {THREE.BufferGeometry} geometry - Geometry to transform
+     * * @param {THREE.BufferGeometry} geometry - Geometry to transform
      */
     applyROSTransformation(geometry) {
         const positions = geometry.attributes.position.array;
@@ -1243,8 +1229,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Load waypoints from SQLite database file
-     * 
-     * @async
+     * * @async
      * @param {File} file - Database file to load
      */
     async loadWaypointsFromFile(file) {
@@ -1294,8 +1279,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Refresh waypoint visualization from database
-     * 
-     * @async
+     * * @async
      */
     async refreshWaypointsFromDB() {
         this.clearVisualWaypoints();
@@ -1369,8 +1353,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Convert ROS coordinates to Three.js coordinates
-     * 
-     * @param {Object} v - ROS coordinate vector {x, y, z}
+     * * @param {Object} v - ROS coordinate vector {x, y, z}
      * @returns {THREE.Vector3} Three.js coordinate vector
      */
     rosToThree(v) {
@@ -1379,8 +1362,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Convert Three.js coordinates to ROS coordinates
-     * 
-     * @param {THREE.Vector3} v - Three.js coordinate vector
+     * * @param {THREE.Vector3} v - Three.js coordinate vector
      * @returns {THREE.Vector3} ROS coordinate vector
      */
     threeToRos(v) {
@@ -1393,8 +1375,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Find the closest waypoint to mouse position (orthographic projection)
-     * 
-     * @param {PointerEvent} event - Mouse event
+     * * @param {PointerEvent} event - Mouse event
      * @returns {number} Index of closest waypoint or -1 if none found
      */
     findClosestPointOrthographic(event) {
@@ -1435,8 +1416,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Convert screen coordinates to normalized device coordinates
-     * 
-     * @param {PointerEvent} event - Pointer event
+     * * @param {PointerEvent} event - Pointer event
      * @returns {Object} Normalized coordinates {x, y}
      */
     getPointerCoordinates(event) {
@@ -1449,8 +1429,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Transform world coordinates to local coordinate system
-     * 
-     * @param {THREE.Vector3} worldPoint - World coordinate point
+     * * @param {THREE.Vector3} worldPoint - World coordinate point
      * @returns {THREE.Vector3} Local coordinate point
      */
     transformWorldToLocal(worldPoint) {
@@ -1459,8 +1438,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Transform local coordinates to world coordinate system
-     * 
-     * @param {THREE.Vector3} localPoint - Local coordinate point
+     * * @param {THREE.Vector3} localPoint - Local coordinate point
      * @returns {THREE.Vector3} World coordinate point
      */
     transformLocalToWorld(localPoint) {
@@ -1473,8 +1451,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Handle mouse hover over waypoints
-     * 
-     * @param {PointerEvent} event - Pointer event
+     * * @param {PointerEvent} event - Pointer event
      */
     handleHover(event) {
         if (!this.camera || this.editMode || this.isDraggingPoint || this.isMarqueeSelecting || !this.waypointsObject) {
@@ -1523,8 +1500,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Add a new waypoint to the database
-     * 
-     * @async
+     * * @async
      * @param {THREE.Vector3} position - Position for new waypoint
      */
     async addPoint(position) {
@@ -1542,8 +1518,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Delete selected waypoints from database
-     * 
-     * @async
+     * * @async
      */
     async deleteSelectedPoints() {
         if (!this.db || this.selectedIndices.size === 0) return;
@@ -1640,8 +1615,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Apply linear interpolation between selected waypoints
-     * 
-     * @async
+     * * @async
      */
     async linearInterpolateSelected() {
         const indices = Array.from(this.selectedIndices).sort((a, b) => a - b);
@@ -1685,8 +1659,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Synchronize radial interpolation controls and preview changes
-     * 
-     * @param {number} value - Interpolation strength value
+     * * @param {number} value - Interpolation strength value
      */
     syncAndPreviewRadial(value) {
         const radialSlider = document.getElementById('radial-strength');
@@ -1730,8 +1703,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Perform radial (Bezier curve) interpolation between selected waypoints
-     * 
-     * @async
+     * * @async
      * @param {boolean} saveToDb - Whether to persist changes to database
      */
     async performRadialInterpolation(saveToDb = false) {
@@ -1806,8 +1778,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Batch update waypoint positions in database
-     * 
-     * @async
+     * * @async
      * @param {Array<number>} indicesToUpdate - Indices of waypoints to update
      * @param {Array<THREE.Vector3>} newPositions - New positions for waypoints
      */
@@ -1960,8 +1931,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Update waypoint information display
-     * 
-     * @param {number} waypointIndex - Index of waypoint to display info for
+     * * @param {number} waypointIndex - Index of waypoint to display info for
      */
     updateWaypointInfo(waypointIndex) {
         if (!this.db || waypointIndex < 0 || waypointIndex >= this.indexToDbId.length) {
@@ -2066,8 +2036,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Apply lane width changes and regenerate lane geometry
-     * 
-     * @async
+     * * @async
      * @param {string} side - Lane side ('left' or 'right')
      */
     async applyAndRegenerateLaneWidth(side) {
@@ -2162,8 +2131,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Set application edit mode
-     * 
-     * @param {string} mode - Edit mode ('waypoint-edit', 'lane-edit', 'layout-drawings')
+     * * @param {string} mode - Edit mode ('waypoint-edit', 'lane-edit', 'layout-drawings')
      */
     setEditMode(mode) {
         this.editMode = ['waypoint-edit', 'lane-edit', 'layout-drawings'].includes(mode);
@@ -2322,8 +2290,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Handle pointer down events for interaction initiation
-     * 
-     * @param {PointerEvent} event - Pointer down event
+     * * @param {PointerEvent} event - Pointer down event
      */
     onPointerDown(event) {
         if (!this.camera) return;
@@ -2482,8 +2449,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Handle pointer move events for drag operations and hover feedback
-     * 
-     * @param {PointerEvent} event - Pointer move event
+     * * @param {PointerEvent} event - Pointer move event
      */
     onPointerMove(event) {
         if (!this.camera) return;
@@ -2621,8 +2587,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Handle pointer up events to finalize interactions
-     * 
-     * @param {PointerEvent} event - Pointer up event
+     * * @param {PointerEvent} event - Pointer up event
      */
     onPointerUp(event) {
         if (this.isDrawingPoints) {
@@ -2693,8 +2658,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Get world coordinates from screen position
-     * 
-     * @param {number} x - Screen X coordinate
+     * * @param {number} x - Screen X coordinate
      * @param {number} y - Screen Y coordinate
      * @returns {THREE.Vector3|null} World coordinates or null if no intersection
      */
@@ -2713,8 +2677,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Update hover coordinate display
-     * 
-     * @param {THREE.Vector3|null} coords - World coordinates to display
+     * * @param {THREE.Vector3|null} coords - World coordinates to display
      */
     updateHoverCoordinates(coords) {
         const hoverCoords = document.getElementById('hover-coords');
@@ -3019,8 +2982,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Switch between application tabs
-     * 
-     * @param {string} tabName - Name of tab to switch to
+     * * @param {string} tabName - Name of tab to switch to
      */
     switchTab(tabName) {
         console.log(`📑 Switching to tab: ${tabName}`);
@@ -3042,8 +3004,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Update panel visibility based on active tab
-     * 
-     * @param {string} tabName - Name of active tab
+     * * @param {string} tabName - Name of active tab
      */
     updatePanelVisibility(tabName) {
         document.querySelectorAll('.side-panel').forEach(p => p.classList.add('hidden'));
@@ -3084,8 +3045,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Show error message to user
-     * 
-     * @param {string} message - Error message to display
+     * * @param {string} message - Error message to display
      */
     showErrorMessage(message) {
         console.error('Error:', message);
@@ -3094,8 +3054,7 @@ class ViryaOSLaneStudio {
 
     /**
      * Get application status for debugging
-     * 
-     * @returns {Object} Current application status
+     * * @returns {Object} Current application status
      */
     getStatus() {
         return {

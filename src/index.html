@@ -1,39 +1,15 @@
 <!DOCTYPE html>
 <html lang="en">
 
-<!-- ========================================================================
-     VIRYAOS LANE STUDIO - MAIN HTML DOCUMENT
-     
-     Professional lane editing application for autonomous vehicles
-     Developed by: Virya Autonomous Technologies Pvt Ltd
-     Copyright (c) 2025 Virya Autonomous Technologies Pvt Ltd. All rights reserved.
-     
-     This HTML document provides the complete user interface structure for
-     ViryaOS Lane Studio, featuring:
-     - 3D point cloud visualization viewport
-     - Multi-tab interface for different editing modes
-     - Professional tool panels with contextual controls
-     - Real-time coordinate display and status information
-     - Modal dialogs for text input and configuration
-     ======================================================================== -->
-
 <head>
-    <!-- ====================================================================
-         DOCUMENT METADATA & CONFIGURATION
-         Essential document setup, viewport configuration, and external dependencies
-         ==================================================================== -->
-    
     <meta charset="utf-8">
     <title>ViryaOS Lane Studio - Advanced Lane Editing for Autonomous Vehicles</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="Professional lane editing application for autonomous vehicle development by Virya Autonomous Technologies">
     <meta name="author" content="Virya Autonomous Technologies Pvt Ltd">
 
-    <!-- External Dependencies -->
-    <!-- SQL.js for SQLite database operations in the browser -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
 
-    <!-- Three.js Import Map for ES6 module loading -->
     <script type="importmap">
     {
         "imports": {
@@ -43,36 +19,17 @@
     }
     </script>
 
-    <!-- Application Stylesheet -->
     <link rel="stylesheet" href="main.css">
 </head>
 
 <body>
-    <!-- ====================================================================
-         MAIN APPLICATION STRUCTURE
-         Core application layout with 3D viewport and UI overlays
-         ==================================================================== -->
-
-    <!-- 3D Rendering Viewport -->
-    <!-- Primary container for Three.js WebGL renderer -->
     <div id="app" title="3D Point Cloud Visualization Viewport"></div>
 
-    <!-- Selection Marquee Box -->
-    <!-- Visual feedback for drag-to-select operations -->
     <div id="selection-box" title="Selection Area Indicator"></div>
 
-    <!-- Loading Indicator -->
-    <!-- Displays during file loading and processing operations -->
     <div id="loader">Loading ViryaOS Lane Studio...</div>
 
-    <!-- ====================================================================
-         TOP NAVIGATION BAR
-         Main application tabs and file loading controls
-         ==================================================================== -->
-    
     <div id="top-tabs">
-        <!-- Tab Navigation -->
-        <!-- Primary mode switching interface -->
         <div class="tab-nav">
             <button id="tab-view" class="tab-button active" title="View and navigate point clouds">
                 <span class="tab-icon">📷</span>
@@ -92,8 +49,6 @@
             </button>
         </div>
 
-        <!-- File Loading Controls -->
-        <!-- Import point clouds and waypoint databases -->
         <div id="file-control">
             <label class="file-label" title="Load point cloud files (PCD/PLY format)">
                 📁 Load PCD/PLY
@@ -106,19 +61,11 @@
         </div>
     </div>
 
-    <!-- ====================================================================
-         WAYPOINT EDITING INTERFACE
-         Left and right panels for waypoint manipulation tools and information
-         ==================================================================== -->
-
-    <!-- Left Panel: Waypoint Tools -->
-    <!-- Primary tool selection and interpolation controls -->
     <div id="left-panel" class="side-panel hidden">
         <div class="panel-header">
             <h3>Waypoint Tools</h3>
         </div>
 
-        <!-- Core Editing Tools -->
         <div class="tool-section">
             <h4>Edit Tools</h4>
             <div class="tool-grid">
@@ -158,13 +105,10 @@
                 </button>
             </div>
         </div>
-        <!-- Advanced Interpolation Controls -->
-        <!-- Appears when interpolation tool is active -->
         <div id="interpolation-panel" class="tool-section hidden">
             <h4>Path Interpolation</h4>
             <p id="interpolation-info" class="panel-hint">Select a path of 3 or more points to interpolate.</p>
             
-            <!-- Linear Interpolation -->
             <div class="actions">
                 <button id="linear-interpolate" class="action-btn success" disabled 
                         title="Create straight-line interpolation between selected points">
@@ -172,7 +116,6 @@
                 </button>
             </div>
             
-            <!-- Radial (Bezier Curve) Interpolation -->
             <h4 style="margin-top: 20px;">Radial Interpolation</h4>
             <div class="control-group">
                 <label for="radial-strength">Curve Strength</label>
@@ -183,7 +126,6 @@
             </div>
         </div>
 
-        <!-- Keyboard Shortcuts Reference -->
         <div class="tool-section">
             <h4>Keyboard Shortcuts</h4>
             <div class="shortcuts-info">
@@ -197,15 +139,11 @@
         </div>
     </div>
 
-    <!-- Right Panel: Waypoint Information -->
-    <!-- Real-time waypoint data display and statistics -->
     <div id="right-panel" class="side-panel hidden">
         <div class="panel-header">
             <h3>Waypoint Information</h3>
         </div>
 
-        <!-- Individual Waypoint Details -->
-        <!-- Shows coordinates and properties of hovered waypoint -->
         <div id="waypoint-info" class="info-section hidden">
             <h4>Selected Waypoint</h4>
             <div class="coord-display">
@@ -228,7 +166,6 @@
             </div>
         </div>
 
-        <!-- Application Features Guide -->
         <div class="info-section">
             <h4>ViryaOS Lane Studio Features</h4>
             <div class="instructions">
@@ -242,7 +179,6 @@
             </div>
         </div>
 
-        <!-- Project Statistics -->
         <div class="info-section">
             <h4>Project Statistics</h4>
             <div class="stats-display">
@@ -254,18 +190,11 @@
         </div>
     </div>
 
-    <!-- ====================================================================
-         LANE EDITING INTERFACE
-         Specialized tools for generating and modifying vehicle lane boundaries
-         ==================================================================== -->
-
-    <!-- Left Panel: Lane Generation Tools -->
     <div id="left-lane-panel" class="side-panel hidden">
         <div class="panel-header">
             <h3>Lane Generation Tools</h3>
         </div>
         
-        <!-- Vehicle Configuration and Lane Generation -->
         <div class="tool-section">
             <h4>Vehicle Configuration</h4>
             <div class="lane-control">
@@ -277,7 +206,6 @@
                 </select>
             </div>
             
-            <!-- Lane Generation Actions -->
             <div class="actions">
                 <button id="generate-lane" class="action-btn action-gen-lane" 
                         title="Generate lane boundaries based on waypoints and vehicle width">
@@ -292,7 +220,6 @@
             </div>
         </div>
 
-        <!-- Advanced Lane Width Editing -->
         <div class="tool-section">
             <h4>Lane Width Editing</h4>
             <div class="actions">
@@ -302,12 +229,9 @@
                 </button>
             </div>
             
-            <!-- Segment Width Controls -->
-            <!-- Appears when two waypoints are selected for width editing -->
             <div id="lane-width-editor" class="tool-section hidden">
                 <h4>Segment Width Configuration</h4>
                 
-                <!-- Left Side Width Control -->
                 <div class="panel-control">
                     <label for="left-lane-width-input">Left Width (m):</label>
                     <div class="stepper-input">
@@ -317,7 +241,6 @@
                     </div>
                 </div>
                 
-                <!-- Right Side Width Control -->
                 <div class="panel-control">
                     <label for="right-lane-width-input">Right Width (m):</label>
                     <div class="stepper-input">
@@ -328,33 +251,22 @@
                 </div>
             </div>
             
-            <!-- Lane Segment Information Display -->
             <div id="lane-edit-info" class="info-display hidden">
-                <!-- Dynamically populated with selected waypoint information -->
-            </div>
+                </div>
         </div>
     </div>
 
-    <!-- Right Panel: Lane Information -->
     <div id="right-lane-panel" class="side-panel hidden">
         <div class="panel-header">
             <h3>Lane Information</h3>
         </div>
-        <!-- Lane statistics and properties will be displayed here -->
-    </div>
+        </div>
 
-    <!-- ====================================================================
-         LAYOUT DRAWINGS INTERFACE
-         Annotation tools for adding shapes, text, and layout elements
-         ==================================================================== -->
-
-    <!-- Left Panel: Drawing Tools -->
     <div id="left-layout-panel" class="side-panel hidden">
         <div class="panel-header">
             <h3>Layout & Annotation Tools</h3>
         </div>
         
-        <!-- Shape Creation Tools -->
         <div class="tool-section">
             <h4>Add Elements</h4>
             <div class="tool-grid">
@@ -376,7 +288,6 @@
                 </button>
             </div>
             
-            <!-- Text Insertion Tool -->
             <div class="actions">
                 <button id="layout-insert-text" class="action-btn action-gen-lane" 
                         title="Add text labels to the layout">
@@ -386,7 +297,6 @@
         </div>
 
         
-        <!-- Element Editing Tools -->
         <div class="tool-section">
             <h4>Edit Elements</h4>
             <div class="tool-grid">
@@ -407,12 +317,9 @@
                 </button>
             </div>
             
-            <!-- Style Customization Controls -->
-            <!-- Appears when an element is selected -->
             <div id="style-controls" class="tool-section hidden">
                 <h4>Element Styling</h4>
                 
-                <!-- Shape Style Controls -->
                 <div id="shape-style-controls" class="color-palette hidden">
                     <div class="color-control">
                         <label for="fill-color">Fill Color</label>
@@ -429,7 +336,6 @@
                     </div>
                 </div>
                 
-                <!-- Text Style Controls -->
                 <div id="text-style-controls" class="color-palette hidden">
                     <div class="color-control">
                         <label for="text-color">Text Color</label>
@@ -449,30 +355,15 @@
         </div>
     </div>
 
-    <!-- Right Panel: Layout Information -->
     <div id="right-layout-panel" class="side-panel hidden">
         <div class="panel-header">
             <h3>Layout Information</h3>
         </div>
-        <!-- Layout element properties and statistics will be displayed here -->
-    </div>
+        </div>
 
-    <!-- ====================================================================
-         REAL-TIME INFORMATION DISPLAY
-         Coordinate tracking and status information
-         ==================================================================== -->
-
-    <!-- Mouse Coordinate Display -->
-    <!-- Shows real-time world coordinates under mouse cursor -->
     <div id="hover-coords" title="Real-time world coordinates under cursor"></div>
 
-    <!-- ====================================================================
-         BOTTOM CONTROL BAR
-         Global visualization and rendering controls
-         ==================================================================== -->
-    
     <div id="bottom-controls">
-        <!-- Point Cloud Visualization Controls -->
         <div class="control-group">
             <label>Point Size:</label>
             <input type="range" id="point-size" min="0.1" max="5" step="0.1" value="0.5"
@@ -494,7 +385,6 @@
             <span id="opacity-value">1.0</span>
         </div>
 
-        <!-- Waypoint Visualization Controls -->
         <div class="control-group">
             <label>Waypoint Size:</label>
             <input type="range" id="waypoint-size" min="0.01" max="0.5" step="0.005" value="0.05"
@@ -502,7 +392,6 @@
             <span id="waypoint-size-value">0.05</span>
         </div>
 
-        <!-- Color and View Mode Controls -->
         <div class="control-group">
             <label>Color Mode:</label>
             <select id="color-mode" title="Select point cloud coloring method">
@@ -520,13 +409,6 @@
         </div>
     </div>
 
-    <!-- ====================================================================
-         MODAL DIALOGS
-         Text input and configuration dialogs
-         ==================================================================== -->
-
-    <!-- Text Input Modal -->
-    <!-- Used for entering text labels and editing existing text -->
     <div id="text-input-modal" class="modal-overlay hidden">
         <div class="modal-content">
             <h3 id="modal-title">Enter Label Text</h3>
@@ -545,12 +427,6 @@
         </div>
     </div>
 
-    <!-- ====================================================================
-         APPLICATION INITIALIZATION
-         Load and start the ViryaOS Lane Studio application
-         ==================================================================== -->
-    
-    <!-- Main Application Script -->
     <script type="module" src="app.js"></script>
 </body>
 </html>
