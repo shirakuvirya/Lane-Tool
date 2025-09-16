@@ -1,126 +1,191 @@
 /**
- * WaypointEdit+ - Professional Stylesheet
- * Complete styling for the fixed working application
- */
+ * ViryaOS Lane Studio - Stylesheet
+ * * Developed by: Virya Autonomous Technologies Pvt Ltd
+ * Copyright (c) 2025 Virya Autonomous Technologies Pvt Ltd. All rights reserved.
+ * */
 
-/* Base Styles */
-html, body {
-    margin: 0;
-    height: 100%;
-    background: #0b0e14;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', system-ui, sans-serif;
-    overflow: hidden;
-    color: #eaeefb;
+/* ========================================================================
+   1. GLOBAL FOUNDATION STYLES
+   Base styles, CSS variables, and fundamental layout structure
+   ======================================================================== */
+
+/**
+ * Root CSS Custom Properties
+ * Centralized color palette and spacing system for consistent theming
+ */
+:root {
+    /* Primary Color Palette */
+    --primary-blue: #4a9eff;
+    --primary-blue-dark: #0066cc;
+    --primary-blue-light: #5aa6ff;
+    
+    /* Background Colors */
+    --bg-primary: #0b0e14;
+    --bg-secondary: rgba(15, 20, 28, 0.95);
+    --bg-tertiary: rgba(45, 55, 68, 0.8);
+    
+    /* Text Colors */
+    --text-primary: #eaeefb;
+    --text-secondary: #a0b0d0;
+    --text-muted: #7a8ba5;
+    
+    /* Border Colors */
+    --border-primary: rgba(74, 158, 255, 0.2);
+    --border-secondary: rgba(74, 158, 255, 0.3);
+    --border-accent: rgba(131, 158, 255, 0.8);
+    
+    /* Spacing System (8px base) */
+    --spacing-xs: 4px;
+    --spacing-sm: 8px;
+    --spacing-md: 12px;
+    --spacing-lg: 16px;
+    --spacing-xl: 20px;
+    --spacing-2xl: 24px;
+    
+    /* Typography */
+    --font-mono: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+    --font-system: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', system-ui, sans-serif;
+    
+    /* Shadows */
+    --shadow-sm: 0 4px 12px rgba(74, 158, 255, 0.2);
+    --shadow-md: 0 4px 15px rgba(74, 158, 255, 0.3);
+    --shadow-lg: 0 4px 15px rgba(74, 158, 255, 0.4);
+    
+    /* Transitions */
+    --transition-fast: all 0.2s ease;
+    --transition-normal: all 0.25s ease;
+    --transition-slow: all 0.3s ease;
 }
 
-/* Main 3D Viewport */
+/**
+ * Global Reset and Base Styles
+ * Establishes consistent foundation across all browsers
+ */
+html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background: var(--bg-primary);
+    font-family: var(--font-system);
+    overflow: hidden; /* Prevents scrollbars in 3D viewport */
+    color: var(--text-primary);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/**
+ * Main 3D Viewport Container
+ * Full-screen canvas area for Three.js rendering
+ */
 #app {
     position: fixed;
     inset: 0;
-    background: #0b0e14;
+    background: var(--bg-primary);
     z-index: 1;
+    cursor: default;
 }
 
-/* Selection Box */
-#selection-box {
-    position: fixed;
-    background: rgba(84, 118, 255, 0.2);
-    border: 1px solid rgba(131, 158, 255, 0.8);
-    pointer-events: none;
-    display: none;
-    z-index: 1000;
-}
+/* ========================================================================
+   2. NAVIGATION & TOP BAR COMPONENTS
+   Header navigation, tabs, and file control elements
+   ======================================================================== */
 
-/* Loading Indicator */
-#loader {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    display: none;
-    background: rgba(0, 0, 0, 0.9);
-    color: #4a9eff;
-    padding: 20px 30px;
-    border-radius: 12px;
-    font-size: 16px;
-    font-weight: 600;
-    backdrop-filter: blur(10px);
-    border: 2px solid rgba(74, 158, 255, 0.3);
-    z-index: 1000;
-}
-
-/* Top Navigation Tabs */
+/**
+ * Top Navigation Container
+ * Fixed header with tab navigation and file controls
+ */
 #top-tabs {
     position: fixed;
     top: 0;
     left: 0;
     right: 0;
     height: 60px;
-    background: rgba(15, 20, 28, 0.95);
-    border-bottom: 2px solid rgba(74, 158, 255, 0.2);
+    background: var(--bg-secondary);
+    border-bottom: 2px solid var(--border-primary);
     backdrop-filter: blur(15px);
     z-index: 100;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 20px;
+    padding: 0 var(--spacing-xl);
 }
 
+/**
+ * Tab Navigation Container
+ * Houses the main application mode tabs
+ */
 .tab-nav {
     display: flex;
-    gap: 4px;
+    gap: var(--spacing-xs);
 }
 
+/**
+ * Individual Tab Button
+ * Interactive tab with hover and active states
+ */
 .tab-button {
-    background: rgba(45, 55, 68, 0.6);
-    border: 1px solid rgba(74, 158, 255, 0.3);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-secondary);
     border-radius: 8px 8px 0 0;
-    color: #a0b0d0;
-    padding: 10px 20px;
+    color: var(--text-secondary);
+    padding: 10px var(--spacing-xl);
     font-size: 14px;
     font-weight: 600;
     cursor: pointer;
-    transition: all 0.25s ease;
+    transition: var(--transition-normal);
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--spacing-sm);
     min-width: 120px;
     justify-content: center;
+    user-select: none;
 }
 
 .tab-button:hover {
     background: rgba(74, 158, 255, 0.1);
-    color: #4a9eff;
+    color: var(--primary-blue);
     transform: translateY(-2px);
 }
 
 .tab-button.active {
-    background: linear-gradient(135deg, #4a9eff, #0066cc);
+    background: linear-gradient(135deg, var(--primary-blue), var(--primary-blue-dark));
     color: #ffffff;
-    border-color: #4a9eff;
-    box-shadow: 0 4px 15px rgba(74, 158, 255, 0.3);
+    border-color: var(--primary-blue);
+    box-shadow: var(--shadow-md);
 }
 
+/**
+ * Tab Icon Styling
+ * Icons within tab buttons
+ */
 .tab-icon {
     font-size: 16px;
 }
 
-/* File Control Section */
+/**
+ * File Control Section
+ * File upload buttons in the top navigation
+ */
 #file-control {
     display: flex;
-    gap: 12px;
+    gap: var(--spacing-md);
 }
 
+/**
+ * File Upload Label Styling
+ * Custom styled file input labels
+ */
 .file-label {
     background: linear-gradient(135deg, #1a2332, #2a3441);
-    border: 1px solid #4a9eff;
+    border: 1px solid var(--primary-blue);
     border-radius: 8px;
-    padding: 10px 16px;
-    color: #4a9eff;
+    padding: 10px var(--spacing-lg);
+    color: var(--primary-blue);
     cursor: pointer;
     font-size: 13px;
     font-weight: 600;
-    transition: all 0.25s ease;
+    transition: var(--transition-normal);
     user-select: none;
     text-align: center;
     min-width: 140px;
@@ -129,52 +194,89 @@ html, body {
 .file-label:hover {
     background: linear-gradient(135deg, #2a3441, #364152);
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(74, 158, 255, 0.2);
-    color: #5aa6ff;
+    box-shadow: var(--shadow-sm);
+    color: var(--primary-blue-light);
 }
 
+/**
+ * Hidden File Inputs
+ * Actual file inputs are hidden, labels act as triggers
+ */
 input[type="file"] {
     display: none;
 }
 
-/* Side Panels */
+/* ========================================================================
+   3. SIDE PANEL SYSTEM
+   Left and right panels for tools, controls, and information display
+   ======================================================================== */
+
+/**
+ * Base Side Panel Styling
+ * Common styles for all side panels (left/right, different modes)
+ */
 .side-panel {
     position: fixed;
-    top: 60px;
-    bottom: 90px;
+    top: 60px; /* Below top navigation */
+    bottom: 90px; /* Above bottom controls */
     width: 340px;
-    background: rgba(15, 20, 28, 0.95);
-    border: 1px solid rgba(74, 158, 255, 0.2);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
     backdrop-filter: blur(15px);
     z-index: 90;
     overflow-y: auto;
-    transition: transform 0.3s ease;
+    transition: var(--transition-slow);
 }
 
-#left-panel, #left-lane-panel, #left-layout-panel {
+/**
+ * Left Panel Positioning
+ * Panels that slide in from the left side
+ */
+#left-panel, 
+#left-lane-panel, 
+#left-layout-panel {
     left: 0;
-    border-right: 2px solid rgba(74, 158, 255, 0.2);
+    border-right: 2px solid var(--border-primary);
     border-left: none;
 }
 
-#right-panel, #right-lane-panel, #right-layout-panel {
+/**
+ * Right Panel Positioning
+ * Panels that slide in from the right side
+ */
+#right-panel, 
+#right-lane-panel, 
+#right-layout-panel {
     right: 0;
-    border-left: 2px solid rgba(74, 158, 255, 0.2);
+    border-left: 2px solid var(--border-primary);
     border-right: none;
 }
 
+/**
+ * Hidden Panel State
+ * Slide-out animation for left panels
+ */
 .side-panel.hidden {
     transform: translateX(-100%);
 }
 
-#right-panel.hidden, #right-lane-panel.hidden, #right-layout-panel.hidden {
+/**
+ * Hidden Right Panel State
+ * Slide-out animation for right panels
+ */
+#right-panel.hidden, 
+#right-lane-panel.hidden, 
+#right-layout-panel.hidden {
     transform: translateX(100%);
 }
 
-/* Panel Headers */
+/**
+ * Panel Header Styling
+ * Sticky headers for panel sections
+ */
 .panel-header {
-    padding: 20px;
-    border-bottom: 1px solid rgba(74, 158, 255, 0.2);
+    padding: var(--spacing-xl);
+    border-bottom: 1px solid var(--border-primary);
     background: rgba(74, 158, 255, 0.05);
     position: sticky;
     top: 0;
@@ -183,49 +285,398 @@ input[type="file"] {
 
 .panel-header h3 {
     margin: 0;
-    color: #4a9eff;
+    color: var(--primary-blue);
     font-size: 18px;
     font-weight: 700;
 }
 
-/* Tool Sections */
+/* ========================================================================
+   4. TOOL SYSTEM & INTERACTIVE ELEMENTS
+   Tool buttons, grids, and interactive control elements
+   ======================================================================== */
+
+/**
+ * Tool Section Container
+ * Groups related tools with consistent spacing
+ */
 .tool-section {
-    padding: 20px;
+    padding: var(--spacing-xl);
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .tool-section h4 {
     margin: 0 0 15px 0;
-    color: #a0b0d0;
+    color: var(--text-secondary);
     font-size: 14px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
 
-/* Tool Grid */
+/**
+ * Tool Grid Layout
+ * Responsive grid for tool buttons
+ */
 .tool-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 10px;
 }
 
+/**
+ * Standard Tool Button
+ * Interactive tool selection buttons with icon and text
+ */
+.tool-button {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-secondary);
+    border-radius: 8px;
+    color: var(--text-secondary);
+    padding: var(--spacing-md) var(--spacing-sm);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition-normal);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    min-height: 60px;
+    text-align: center;
+    user-select: none;
+}
+
+.tool-button:hover {
+    background: rgba(74, 158, 255, 0.1);
+    color: var(--primary-blue);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-sm);
+}
+
+.tool-button.active {
+    background: linear-gradient(135deg, var(--primary-blue), var(--primary-blue-dark));
+    color: #ffffff;
+    border-color: var(--primary-blue);
+    box-shadow: var(--shadow-lg);
+}
+
+/**
+ * Layout Tool Button Variant
+ * Specialized styling for layout/drawing tools
+ */
+.tool-button-layout {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-secondary);
+    border-radius: 8px;
+    color: var(--text-secondary);
+    padding: var(--spacing-md) var(--spacing-sm);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition-normal);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    min-height: 60px;
+    text-align: center;
+    user-select: none;
+}
+
+.tool-button-layout:hover {
+    background: rgba(74, 158, 255, 0.1);
+    color: var(--primary-blue);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-sm);
+}
+
+.tool-button-layout.active {
+    background: linear-gradient(135deg, var(--primary-blue), var(--primary-blue-dark));
+    color: #ffffff;
+    border-color: var(--primary-blue);
+    box-shadow: var(--shadow-lg);
+}
+
+/**
+ * Tool Icon Styling
+ * Icons within tool buttons
+ */
+.tool-icon {
+    font-size: 18px;
+}
+
+/* ========================================================================
+   5. ACTION BUTTONS & CONTROLS
+   Primary action buttons, sliders, and form controls
+   ======================================================================== */
+
+/**
+ * Action Button Container
+ * Flexible container for action buttons
+ */
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--spacing-sm);
+    margin-top: 15px;
+}
+
+/**
+ * Primary Action Button
+ * Main action buttons with gradient styling
+ */
+.action-btn {
+    background: linear-gradient(135deg, var(--primary-blue), var(--primary-blue-dark));
+    border: none;
+    border-radius: 6px;
+    color: #ffffff;
+    padding: var(--spacing-sm) 14px;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: var(--transition-normal);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    flex: 1;
+    min-width: 80px;
+    user-select: none;
+}
+
+.action-btn:hover:not(:disabled) {
+    background: linear-gradient(135deg, var(--primary-blue-light), #0077dd);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+
+.action-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: rgba(100, 100, 100, 0.5);
+}
+
+/**
+ * Success Action Button Variant
+ * Green gradient for positive actions
+ */
+.action-btn.success {
+    background: linear-gradient(135deg, #22c55e, #16a34a);
+}
+
+.action-btn.success:hover:not(:disabled) {
+    background: linear-gradient(135deg, #34d399, #059669);
+}
+
+/**
+ * Generate Lane Button Variant
+ * Blue gradient for lane generation
+ */
+.action-gen-lane {
+    background: linear-gradient(135deg, var(--primary-blue), var(--primary-blue-dark));
+}
+
+.action-gen-lane:hover:not(:disabled) {
+    background: linear-gradient(135deg, var(--primary-blue-light), #0077dd);
+}
+
+/**
+ * Delete Lane Button Variant
+ * Red gradient for destructive actions
+ */
+.action-del-lane {
+    background: linear-gradient(135deg, #ef4444, #b91c1c);
+}
+
+.action-del-lane:hover:not(:disabled) {
+    background: linear-gradient(135deg, #f87171, #dc2626);
+}
+
+/* ========================================================================
+   6. FORM CONTROLS & INPUT ELEMENTS
+   Sliders, selects, color pickers, and specialized input controls
+   ======================================================================== */
+
+/**
+ * Slider Container
+ * Layout for range sliders with value display
+ */
+.slider-container {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.slider-container input[type="range"] {
+    flex-grow: 1;
+}
+
+.slider-container span {
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-family: var(--font-mono);
+    min-width: 35px;
+    text-align: right;
+}
+
+/**
+ * General Form Controls
+ * Base styling for select and range inputs
+ */
+select, 
+input[type="range"] {
+    background: rgba(45, 55, 68, 0.9);
+    border: 1px solid var(--border-secondary);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 11px;
+    transition: var(--transition-normal);
+}
+
+select:hover, 
+input[type="range"]:hover {
+    border-color: rgba(74, 158, 255, 0.5);
+    background: rgba(45, 55, 68, 1);
+}
+
+select:focus, 
+input[type="range"]:focus {
+    outline: none;
+    border-color: var(--primary-blue);
+    box-shadow: 0 0 0 2px rgba(74, 158, 255, 0.25);
+}
+
+/**
+ * Range Slider Styling
+ * Custom styled range inputs
+ */
+input[type="range"] {
+    -webkit-appearance: none;
+    height: 4px;
+    background: linear-gradient(90deg, rgba(74, 158, 255, 0.2), rgba(74, 158, 255, 0.4));
+    border-radius: 2px;
+    padding: 0;
+    min-width: 70px;
+    cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--primary-blue), var(--primary-blue-dark));
+    cursor: pointer;
+    transition: var(--transition-fast);
+}
+
+input[type="range"]::-webkit-slider-thumb:hover {
+    background: linear-gradient(135deg, var(--primary-blue-light), #0077dd);
+    transform: scale(1.15);
+}
+
+/**
+ * Lane Control Layout
+ * Specialized layout for lane width controls
+ */
 .lane-control {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 15px; /* Adds space before the button below it */
+    margin-bottom: 15px;
 }
+
 .lane-control label {
-    color: #a0b0d0;
+    color: var(--text-secondary);
     font-weight: 600;
     font-size: 13px;
 }
+
 .lane-control select {
     flex-grow: 1;
     margin-left: 10px;
 }
-/* Styling for Color Palette in Layout Panel */
+
+/**
+ * Panel Control Layout
+ * General panel control layout
+ */
+.panel-control {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+/**
+ * Stepper Input Control
+ * Numeric input with increment/decrement buttons
+ */
+.stepper-input {
+    display: flex;
+    align-items: center;
+}
+
+.stepper-input input[type="text"] {
+    width: 60px;
+    text-align: center;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-primary);
+    background: #1a2332;
+    border-left: none;
+    border-right: none;
+    border-radius: 0;
+    padding: 6px 4px;
+    border: 1px solid #4a5568;
+}
+
+.stepper-input input[type="text"]::-webkit-outer-spin-button,
+.stepper-input input[type="text"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.stepper-input button {
+    width: 32px;
+    height: 32px;
+    font-size: 18px;
+    font-weight: bold;
+    line-height: 1;
+    padding: 0;
+    background: #2d3748;
+    border: 1px solid #4a5568;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: var(--transition-fast);
+}
+
+.stepper-input button:hover {
+    background: #4a5568;
+    color: #fff;
+}
+
+.stepper-input button:first-of-type {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    border-top-left-radius: 6px;
+    border-bottom-left-radius: 6px;
+}
+
+.stepper-input button:last-of-type {
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    border-top-right-radius: 6px;
+    border-bottom-right-radius: 6px;
+}
+
+/* ========================================================================
+   7. COLOR SYSTEM & STYLE CONTROLS
+   Color pickers, palettes, and style customization controls
+   ======================================================================== */
+
+/**
+ * Color Palette Container
+ * Grid layout for color controls
+ */
 .color-palette {
     display: grid;
     grid-template-columns: 1fr;
@@ -233,6 +684,10 @@ input[type="file"] {
     padding-top: 10px;
 }
 
+/**
+ * Individual Color Control
+ * Layout for color picker with label
+ */
 .color-control {
     display: flex;
     justify-content: space-between;
@@ -242,9 +697,13 @@ input[type="file"] {
 .color-control label {
     font-size: 13px;
     font-weight: 600;
-    color: #a0b0d0;
+    color: var(--text-secondary);
 }
 
+/**
+ * Color Picker Input Styling
+ * Custom styled color input elements
+ */
 .color-control input[type="color"] {
     -webkit-appearance: none;
     -moz-appearance: none;
@@ -267,438 +726,185 @@ input[type="file"] {
     border-radius: 6px;
     border: 2px solid rgba(74, 158, 255, 0.5);
 }
-.tool-button {
-    background: rgba(45, 55, 68, 0.8);
-    border: 1px solid rgba(74, 158, 255, 0.3);
-    border-radius: 8px;
-    color: #a0b0d0;
-    padding: 12px 8px;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.25s ease;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 6px;
-    min-height: 60px;
-    text-align: center;
-}
 
-.tool-button:hover {
-    background: rgba(74, 158, 255, 0.1);
-    color: #4a9eff;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(74, 158, 255, 0.2);
-}
+/* ========================================================================
+   8. INFORMATION DISPLAY COMPONENTS
+   Coordinate displays, statistics, and information panels
+   ======================================================================== */
 
-.tool-button.active {
-    background: linear-gradient(135deg, #4a9eff, #0066cc);
-    color: #ffffff;
-    border-color: #4a9eff;
-    box-shadow: 0 4px 15px rgba(74, 158, 255, 0.4);
-}
-.slider-container {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.slider-container input[type="range"] {
-    flex-grow: 1;
-}
-
-.slider-container span {
-    color: #a0b0d0;
-    font-size: 12px;
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
-    min-width: 35px;
-    text-align: right;
-}
-
-
-.tool-icon {
-    font-size: 18px;
-}
-
-/* Action Buttons */
-.actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    margin-top: 15px;
-}
-
-.action-btn {
-    background: linear-gradient(135deg, #4a9eff, #0066cc);
-    border: none;
-    border-radius: 6px;
-    color: #ffffff;
-    padding: 8px 14px;
-    font-size: 11px;
-    font-weight: 700;
-    cursor: pointer;
-    transition: all 0.25s ease;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    flex: 1;
-    min-width: 80px;
-}
-
-.action-btn:hover:not(:disabled) {
-    background: linear-gradient(135deg, #5aa6ff, #0077dd);
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(74, 158, 255, 0.3);
-}
-
-.action-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-    background: rgba(100, 100, 100, 0.5);
-}
-
-.action-btn.success {
-    background: linear-gradient(135deg, #22c55e, #16a34a);
-}
-
-.action-btn.success:hover:not(:disabled) {
-    background: linear-gradient(135deg, #34d399, #059669);
-}
-
-.action-gen-lane {
-    background: linear-gradient(135deg, #4a9eff, #0066cc);
-}
-
-.action-gen-lane:hover:not(:disabled) {
-    background: linear-gradient(135deg, #5aa6ff, #0077dd);
-}
-
-/* Red gradient for the Delete Lane button */
-.action-del-lane {
-    background: linear-gradient(135deg, #ef4444, #b91c1c);
-}
-
-.action-del-lane:hover:not(:disabled) {
-    background: linear-gradient(135deg, #f87171, #dc2626);
-}
-
-/* Info Sections */
+/**
+ * Information Section Container
+ * Base styling for info sections
+ */
 .info-section {
-    padding: 20px;
+    padding: var(--spacing-xl);
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .info-section h4 {
     margin: 0 0 15px 0;
-    color: #a0b0d0;
+    color: var(--text-secondary);
     font-size: 14px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
 
-/* Coordinate Display */
-.coord-display, .stats-display {
+/**
+ * Coordinate and Statistics Display
+ * Styled containers for numeric data display
+ */
+.coord-display, 
+.stats-display {
     background: rgba(74, 158, 255, 0.05);
-    border: 1px solid rgba(74, 158, 255, 0.2);
+    border: 1px solid var(--border-primary);
     border-radius: 8px;
     padding: 15px;
 }
 
-.coord-row, .stat-row {
+/**
+ * Data Row Layout
+ * Consistent layout for label-value pairs
+ */
+.coord-row, 
+.stat-row {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin: 8px 0;
+    margin: var(--spacing-sm) 0;
 }
 
-.coord-row label, .stat-row label {
-    color: #a0b0d0;
+.coord-row label, 
+.stat-row label {
+    color: var(--text-secondary);
     font-weight: 600;
     font-size: 13px;
 }
 
-.coord-row span, .stat-row span {
-    color: #4a9eff;
+.coord-row span, 
+.stat-row span {
+    color: var(--primary-blue);
     font-weight: 700;
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+    font-family: var(--font-mono);
     font-size: 13px;
     background: rgba(74, 158, 255, 0.1);
-    padding: 4px 8px;
+    padding: 4px var(--spacing-sm);
     border-radius: 4px;
     min-width: 60px;
     text-align: center;
 }
 
-/* Styling for the new Lane Edit info box */
+/**
+ * Lane Edit Information Display
+ * Specialized info display for lane editing
+ */
 .info-display {
     margin-top: 15px;
     padding: 10px;
     background: rgba(74, 158, 255, 0.05);
-    border: 1px solid rgba(74, 158, 255, 0.2);
+    border: 1px solid var(--border-primary);
     border-radius: 8px;
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+    font-family: var(--font-mono);
     font-size: 12px;
-    color: #a0b0d0;
+    color: var(--text-secondary);
 }
 
 .info-display p {
     margin: 4px 0;
-    white-space: pre-wrap; /* Ensures text wraps nicely */
+    white-space: pre-wrap;
 }
 
 .info-display span {
-    color: #4a9eff;
+    color: var(--primary-blue);
     font-weight: 600;
 }
 
-/* Instructions */
+/* ========================================================================
+   9. INSTRUCTIONAL & HELP ELEMENTS
+   Instructions, shortcuts, and help text styling
+   ======================================================================== */
+
+/**
+ * Instruction Text
+ * General instruction and help text styling
+ */
 .instructions p {
-    margin: 8px 0;
+    margin: var(--spacing-sm) 0;
     font-size: 13px;
-    color: #7a8ba5;
+    color: var(--text-muted);
     line-height: 1.4;
 }
 
+/**
+ * Keyboard Shortcuts Information
+ * Specialized styling for shortcut displays
+ */
 .shortcuts-info p {
     margin: 6px 0;
     font-size: 12px;
-    color: #7a8ba5;
+    color: var(--text-muted);
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--spacing-sm);
 }
 
+/**
+ * Keyboard Key Styling
+ * Visual representation of keyboard keys
+ */
 kbd {
     background: rgba(74, 158, 255, 0.2);
-    color: #4a9eff;
+    color: var(--primary-blue);
     padding: 2px 6px;
     border-radius: 4px;
     font-size: 11px;
     font-weight: 600;
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+    font-family: var(--font-mono);
 }
 
-/* Hover Coordinates */
-#hover-coords {
+/* ========================================================================
+   10. OVERLAY & MODAL COMPONENTS
+   Loading indicators, modals, and overlay elements
+   ======================================================================== */
+
+/**
+ * Loading Indicator
+ * Centered loading spinner with backdrop
+ */
+#loader {
     position: fixed;
-    bottom: 110px;
+    top: 50%;
     left: 50%;
-    transform: translateX(-50%);
-    background: rgba(15, 20, 28, 0.95);
-    border: 1px solid rgba(74, 158, 255, 0.2);
-    padding: 8px 12px;
-    border-radius: 6px;
-    color: #4a9eff;
-    font-size: 12px;
-    font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+    transform: translate(-50%, -50%);
+    display: none;
+    background: rgba(0, 0, 0, 0.9);
+    color: var(--primary-blue);
+    padding: var(--spacing-xl) 30px;
+    border-radius: 12px;
+    font-size: 16px;
+    font-weight: 600;
     backdrop-filter: blur(10px);
-    pointer-events: none;
-    z-index: 80;
-}
-/* Styling for the new stepper input for lane width */
-.stepper-input {
-    display: flex;
-    align-items: center;
-}
-.panel-control {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 10px;
+    border: 2px solid var(--border-secondary);
+    z-index: 1000;
 }
 
-
-.stepper-input input[type="text"] {
-    width: 60px;
-    text-align: center;
-    font-size: 14px;
-    font-weight: 700;
-    color: #eaeefb;
-    background: #1a2332;
-    border-left: none;
-    border-right: none;
-    border-radius: 0;
-    padding: 6px 4px;
-    border: 1px solid #4a5568;
-}
-
-.stepper-input input[type="text"]::-webkit-outer-spin-button,
-.stepper-input input[type="text"]::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-
-.stepper-input button {
-    width: 32px;
-    height: 32px;
-    font-size: 18px;
-    font-weight: bold;
-    line-height: 1;
-    padding: 0;
-    background: #2d3748;
-    border: 1px solid #4a5568;
-    color: #a0b0d0;
-    cursor: pointer;
-    transition: all 0.2s ease;
-}
-
-.stepper-input button:hover {
-    background: #4a5568;
-    color: #fff;
-}
-
-.stepper-input button:first-of-type {
-    border-top-right-radius: 0;
-    border-bottom-right-radius: 0;
-    border-top-left-radius: 6px;
-    border-bottom-left-radius: 6px;
-}
-
-.stepper-input button:last-of-type {
-    border-top-left-radius: 0;
-    border-bottom-left-radius: 0;
-    border-top-right-radius: 6px;
-    border-bottom-right-radius: 6px;
-}
-
-/* Bottom Controls */
-#bottom-controls {
+/**
+ * Selection Box Overlay
+ * Visual feedback for marquee selection
+ */
+#selection-box {
     position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 80px;
-    display: flex;
-    flex-wrap: nowrap;
-    justify-content: space-between;
-    align-items: center;
-    padding: 16px 24px;
-    background: rgba(15, 20, 28, 0.95);
-    border-top: 2px solid rgba(74, 158, 255, 0.2);
-    backdrop-filter: blur(15px);
-    color: #eaeefb;
-    gap: 18px;
-    z-index: 85;
-}
-
-.control-group {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 12px;
-    font-weight: 600;
-}
-
-.control-group label {
-    flex: 0 0 auto;
-    color: #4a9eff;
-    font-weight: 700;
-    min-width: 75px;
-    font-size: 11px;
-}
-
-.control-group span {
-    flex: 0 0 auto;
-    min-width: 35px;
-    font-size: 10px;
-    color: #7a8ba5;
-    text-align: center;
-    font-weight: 600;
-    background: rgba(74, 158, 255, 0.1);
-    padding: 2px 6px;
-    border-radius: 4px;
-}
-
-.tool-button-layout {
-    background: rgba(45, 55, 68, 0.8);
-    border: 1px solid rgba(74, 158, 255, 0.3);
-    border-radius: 8px;
-    color: #a0b0d0;
-    padding: 12px 8px;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.25s ease;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 6px;
-    min-height: 60px;
-    text-align: center;
-}
-
-.tool-button-layout:hover {
-    background: rgba(74, 158, 255, 0.1);
-    color: #4a9eff;
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(74, 158, 255, 0.2);
-}
-
-.tool-button-layout.active {
-    background: linear-gradient(135deg, #4a9eff, #0066cc);
-    color: #ffffff;
-    border-color: #4a9eff;
-    box-shadow: 0 4px 15px rgba(74, 158, 255, 0.4);
-}
-
-
-/* Form Controls */
-select, input[type="range"] {
-    background: rgba(45, 55, 68, 0.9);
-    border: 1px solid rgba(74, 158, 255, 0.3);
-    border-radius: 6px;
-    color: #eaeefb;
-    font-size: 11px;
-    transition: all 0.25s ease;
-}
-
-select:hover, input[type="range"]:hover {
-    border-color: rgba(74, 158, 255, 0.5);
-    background: rgba(45, 55, 68, 1);
-}
-
-select:focus, input[type="range"]:focus {
-    outline: none;
-    border-color: #4a9eff;
-    box-shadow: 0 0 0 2px rgba(74, 158, 255, 0.25);
-}
-
-input[type="range"] {
-    -webkit-appearance: none;
-    height: 4px;
-    background: linear-gradient(90deg, rgba(74, 158, 255, 0.2), rgba(74, 158, 255, 0.4));
-    border-radius: 2px;
-    padding: 0;
-    min-width: 70px;
-    cursor: pointer;
-}
-
-input[type="range"]::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #4a9eff, #0066cc);
-    cursor: pointer;
-    transition: all 0.2s ease;
-}
-
-input[type="range"]::-webkit-slider-thumb:hover {
-    background: linear-gradient(135deg, #5aa6ff, #0077dd);
-    transform: scale(1.15);
-}
-
-/* Utility Classes */
-.hidden { 
-    visibility: hidden;
-    opacity: 0 !important;
+    background: rgba(84, 118, 255, 0.2);
+    border: 1px solid var(--border-accent);
     pointer-events: none;
+    display: none;
+    z-index: 1000;
 }
 
-/* ADDED: Text Input Modal Styles */
+/**
+ * Text Input Modal System
+ * Modal overlay and content for text input
+ */
 .modal-overlay {
     position: fixed;
     inset: 0;
@@ -717,7 +923,7 @@ input[type="range"]::-webkit-slider-thumb:hover {
     background: #1a2332;
     padding: 25px;
     border-radius: 12px;
-    border: 1px solid rgba(74, 158, 255, 0.3);
+    border: 1px solid var(--border-secondary);
     width: 90%;
     max-width: 400px;
     display: flex;
@@ -727,27 +933,35 @@ input[type="range"]::-webkit-slider-thumb:hover {
 
 .modal-content h3 {
     margin: 0;
-    color: #4a9eff;
+    color: var(--primary-blue);
     font-size: 18px;
     text-align: center;
 }
 
+/**
+ * Text Input Field in Modal
+ * Styled text input for modal dialogs
+ */
 #text-input-field {
     width: 100%;
-    padding: 12px;
+    padding: var(--spacing-md);
     font-size: 14px;
-    background: #0b0e14;
-    border: 1px solid rgba(74, 158, 255, 0.3);
+    background: var(--bg-primary);
+    border: 1px solid var(--border-secondary);
     border-radius: 6px;
-    color: #eaeefb;
-    box-sizing: border-box; /* Important for padding */
+    color: var(--text-primary);
+    box-sizing: border-box;
 }
 
 #text-input-field:focus {
     outline: none;
-    border-color: #4a9eff;
+    border-color: var(--primary-blue);
 }
 
+/**
+ * Modal Action Buttons
+ * Button container for modal actions
+ */
 .modal-actions {
     display: flex;
     gap: 10px;
@@ -755,57 +969,113 @@ input[type="range"]::-webkit-slider-thumb:hover {
     margin-top: 10px;
 }
 
-/* Responsive Design */
-@media (max-width: 1400px) {
-    .side-panel {
-        width: 300px;
-    }
+/* ========================================================================
+   11. BOTTOM CONTROLS & STATUS BAR
+   Bottom control bar with real-time controls and status information
+   ======================================================================== */
 
-    #bottom-controls {
-        flex-wrap: wrap;
-        gap: 12px;
-        height: auto;
-        min-height: 80px;
-        padding: 12px;
-    }
-
-    .control-group {
-        flex: 0 0 auto;
-        min-width: 130px;
-    }
+/**
+ * Bottom Controls Container
+ * Fixed bottom bar with real-time controls
+ */
+#bottom-controls {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 80px;
+    display: flex;
+    flex-wrap: nowrap;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--spacing-lg) var(--spacing-2xl);
+    background: var(--bg-secondary);
+    border-top: 2px solid var(--border-primary);
+    backdrop-filter: blur(15px);
+    color: var(--text-primary);
+    gap: 18px;
+    z-index: 85;
 }
 
-@media (max-width: 1024px) {
-    #top-tabs {
-        flex-direction: column;
-        height: auto;
-        padding: 10px;
-        gap: 10px;
-    }
-
-    .tab-nav {
-        flex-wrap: wrap;
-        justify-content: center;
-    }
-
-    .tab-button {
-        min-width: 100px;
-        padding: 8px 16px;
-        font-size: 12px;
-    }
-
-    .side-panel {
-        width: 260px;
-        font-size: 13px;
-    }
-
-    .tool-grid {
-        grid-template-columns: 1fr;
-    }
+/**
+ * Control Group Layout
+ * Individual control groups within bottom bar
+ */
+.control-group {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    font-size: 12px;
+    font-weight: 600;
 }
 
+.control-group label {
+    flex: 0 0 auto;
+    color: var(--primary-blue);
+    font-weight: 700;
+    min-width: 75px;
+    font-size: 11px;
+}
 
-/* Scrollbar Styling */
+.control-group span {
+    flex: 0 0 auto;
+    min-width: 35px;
+    font-size: 10px;
+    color: var(--text-muted);
+    text-align: center;
+    font-weight: 600;
+    background: rgba(74, 158, 255, 0.1);
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+/**
+ * Hover Coordinates Display
+ * Real-time coordinate display following mouse cursor
+ */
+#hover-coords {
+    position: fixed;
+    bottom: 110px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-primary);
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-radius: 6px;
+    color: var(--primary-blue);
+    font-size: 12px;
+    font-family: var(--font-mono);
+    backdrop-filter: blur(10px);
+    pointer-events: none;
+    z-index: 80;
+}
+
+/* ========================================================================
+   12. UTILITY CLASSES & HELPERS
+   Reusable utility classes and helper styles
+   ======================================================================== */
+
+/**
+ * Visibility Utilities
+ * Classes for showing/hiding elements
+ */
+.hidden { 
+    visibility: hidden;
+    opacity: 0 !important;
+    pointer-events: none;
+}
+
+/* ========================================================================
+   13. SCROLLBAR CUSTOMIZATION
+   Custom scrollbar styling for panels and containers
+   ======================================================================== */
+
+/**
+ * Custom Scrollbar for Side Panels
+ * Styled scrollbars matching the application theme
+ */
 .side-panel::-webkit-scrollbar {
     width: 6px;
 }
@@ -822,3 +1092,129 @@ input[type="range"]::-webkit-slider-thumb:hover {
 .side-panel::-webkit-scrollbar-thumb:hover {
     background: rgba(74, 158, 255, 0.5);
 }
+
+/* ========================================================================
+   14. RESPONSIVE DESIGN & MEDIA QUERIES
+   Adaptive layouts for different screen sizes and devices
+   ======================================================================== */
+
+/**
+ * Large Desktop Adjustments (≤1400px)
+ * Optimizations for smaller desktop screens
+ */
+@media (max-width: 1400px) {
+    .side-panel {
+        width: 300px;
+    }
+
+    #bottom-controls {
+        flex-wrap: wrap;
+        gap: var(--spacing-md);
+        height: auto;
+        min-height: 80px;
+        padding: var(--spacing-md);
+    }
+
+    .control-group {
+        flex: 0 0 auto;
+        min-width: 130px;
+    }
+}
+
+/**
+ * Tablet and Small Desktop (≤1024px)
+ * Mobile-friendly adaptations
+ */
+@media (max-width: 1024px) {
+    #top-tabs {
+        flex-direction: column;
+        height: auto;
+        padding: 10px;
+        gap: 10px;
+    }
+
+    .tab-nav {
+        flex-wrap: wrap;
+        justify-content: center;
+    }
+
+    .tab-button {
+        min-width: 100px;
+        padding: var(--spacing-sm) var(--spacing-lg);
+        font-size: 12px;
+    }
+
+    .side-panel {
+        width: 260px;
+        font-size: 13px;
+    }
+
+    .tool-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/**
+ * Mobile Devices (≤768px)
+ * Touch-optimized interface adjustments
+ */
+@media (max-width: 768px) {
+    :root {
+        --spacing-xs: 6px;
+        --spacing-sm: 12px;
+        --spacing-md: 16px;
+        --spacing-lg: 20px;
+        --spacing-xl: 24px;
+        --spacing-2xl: 28px;
+    }
+
+    .side-panel {
+        width: 100%;
+        height: 50vh;
+        top: auto;
+        bottom: 90px;
+        transform: translateY(100%);
+    }
+
+    .side-panel:not(.hidden) {
+        transform: translateY(0);
+    }
+
+    .tool-button,
+    .tool-button-layout {
+        min-height: 80px;
+        font-size: 14px;
+        padding: var(--spacing-lg);
+    }
+
+    .action-btn {
+        padding: var(--spacing-md) var(--spacing-lg);
+        font-size: 13px;
+        min-width: 100px;
+    }
+}
+
+/* ========================================================================
+   15. PRINT STYLES
+   Optimizations for print media (if needed for documentation)
+   ======================================================================== */
+
+@media print {
+    .side-panel,
+    #top-tabs,
+    #bottom-controls,
+    #hover-coords,
+    .modal-overlay {
+        display: none !important;
+    }
+
+    #app {
+        position: static;
+        background: white;
+        color: black;
+    }
+}
+
+/* ========================================================================
+   END OF VIRYAOS LANE STUDIO STYLESHEET
+   ======================================================================== */
