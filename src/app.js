@@ -57,6 +57,21 @@ CREATE TABLE IF NOT EXISTS edge_graph (
     FOREIGN KEY (id2) REFERENCES waypoints (id) ON DELETE CASCADE
 );`;
 
+const JUNCTION_POINTS_TABLE_SQL = `
+CREATE TABLE IF NOT EXISTS junction_points (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    junction_waypoint_id INTEGER NOT NULL,
+    from_waypoint_id INTEGER NOT NULL,
+    to_waypoint_id INTEGER NOT NULL,
+    entry_x REAL NOT NULL,
+    entry_y REAL NOT NULL,
+    entry_z REAL NOT NULL,
+    exit_x REAL NOT NULL,
+    exit_y REAL NOT NULL,
+    exit_z REAL NOT NULL,
+    FOREIGN KEY (junction_waypoint_id) REFERENCES waypoints (id) ON DELETE CASCADE
+);`;
+
 
 /**
  * Main application class for ViryaOSLaneStudio
@@ -813,8 +828,18 @@ async generateturn() {
         alert("Please load a database and waypoints first.");
         return;
     }
+
+    this.db.run(JUNCTION_POINTS_TABLE_SQL);
+
     this.showLoader();
     console.log('🚀 Starting full graph processing...');
+
+    this.db.run("DELETE FROM junction_points");
+    const insertJunctionStmt = this.db.prepare(
+        `INSERT INTO junction_points 
+        (junction_waypoint_id, from_waypoint_id, to_waypoint_id, entry_x, entry_y, entry_z, exit_x, exit_y, exit_z) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
 
     const vehicleSelect = document.getElementById('vehicle-select-turn');
     const R = parseFloat(vehicleSelect.value) || 1.0;
@@ -822,106 +847,105 @@ async generateturn() {
     // ======================================================================
     // PART 1: PROCESS JUNCTIONS (Nodes with > 2 edges)
     // ======================================================================
-    // ======================================================================
+    console.log("--- Part 1: Checking for and rebuilding junctions... ---");
 
-console.log("--- Part 1: Checking for and rebuilding junctions... ---");
-
-// 1a. Build a local representation of the graph
-let adj = new Map();
-let dbIdToWaypointMap = new Map();
-this.waypointsData.forEach(wp => {
-    adj.set(wp.id, new Set());
-    dbIdToWaypointMap.set(wp.id, { id: wp.id, pos: wp.pos });
-});
-let stmt = this.db.prepare("SELECT id1, id2 FROM edge_graph");
-while (stmt.step()) {
-    const [id1, id2] = stmt.get();
-    if (adj.has(id1) && adj.has(id2)) {
-        adj.get(id1).add(id2);
-        adj.get(id2).add(id1);
-    }
-}
-stmt.free();
-
-// 1b. Find all junctions
-const junctions = [];
-for (const [id, neighbors] of adj.entries()) {
-    if (neighbors.size > 2) {
-        junctions.push(id);
-    }
-}
-// 1c. If junctions exist, run the rebuild logic
-if (junctions.length > 0) {
-    console.log(`Found ${junctions.length} junctions. Rebuilding...`);
-    const numPointsInArc = 10;
-    const idsToDelete = new Set();
-    const pointsToAdd = [];
-    const edgesToAdd = [];
-    let tempPointCounter = 0;
-
-    for (const junctionId of junctions) {
-        // idsToDelete.add(junctionId);
-        const neighbors = Array.from(adj.get(junctionId));
-        const p_j = dbIdToWaypointMap.get(junctionId).pos;
-
-        // Create curves for all pairs of neighboring branches
-        for (let i = 0; i < neighbors.length; i++) {
-            for (let j = i + 1; j < neighbors.length; j++) {
-                const p1_id = neighbors[i];
-                const p2_id = neighbors[j];
-                const p1 = dbIdToWaypointMap.get(p1_id).pos;
-                const p2 = dbIdToWaypointMap.get(p2_id).pos;
-
-                // *** START: CORRECTED RADIUS CALCULATION ***
-                const v1 = new THREE.Vector3().subVectors(p1, p_j).normalize();
-                const v2 = new THREE.Vector3().subVectors(p2, p_j).normalize();
-                const dotProduct = v1.dot(v2);
-                
-                // Avoid creating curves for branches that are nearly straight (180 degrees)
-                if (dotProduct < -0.999) continue;
-
-                const turn_angle = Math.PI - Math.acos(dotProduct);
-                if (turn_angle < 0.01) continue;
-                
-                // Calculate the IDEAL distance from the junction to the curve's start/end point
-                const idealTangentDist = R / Math.tan(turn_angle / 2);
-                // *** END: CORRECTED RADIUS CALCULATION ***
-
-                const dist1 = p_j.distanceTo(p1);
-                const dist2 = p_j.distanceTo(p2);
-                
-                // Clamp the ideal distance to prevent the curve extending beyond the immediate neighbors
-                const trimDist = idealTangentDist// Math.min(, dist1 * 0.9, dist2 * 0.9);
-                if (trimDist < 0.1) continue;
-
-                const startPoint = new THREE.Vector3().lerpVectors(p_j, p1, trimDist / dist1);
-                const endPoint = new THREE.Vector3().lerpVectors(p_j, p2, trimDist / dist2);
-
-                const curve = new THREE.QuadraticBezierCurve3(startPoint, p_j, endPoint);
-                const arcPoints = curve.getPoints(numPointsInArc);                
-                let lastPointId = p1_id;
-                
-                for (let k = 1; k < arcPoints.length - 1; k++) {
-                    const tempId = `new_${tempPointCounter++}`;
-                    pointsToAdd.push({ tempId, pos: arcPoints[k] });
-                    edgesToAdd.push({ from: lastPointId, to: tempId });
-                    lastPointId = tempId;
-                }
-                edgesToAdd.push({ from: lastPointId, to: p2_id });
-            }
+    let adj = new Map();
+    let dbIdToWaypointMap = new Map();
+    this.waypointsData.forEach(wp => {
+        adj.set(wp.id, new Set());
+        dbIdToWaypointMap.set(wp.id, { id: wp.id, pos: wp.pos });
+    });
+    let stmt = this.db.prepare("SELECT id1, id2 FROM edge_graph");
+    while (stmt.step()) {
+        const [id1, id2] = stmt.get();
+        if (adj.has(id1) && adj.has(id2)) {
+            adj.get(id1).add(id2);
+            adj.get(id2).add(id1);
         }
     }
-    await this.applyGraphModifications(idsToDelete, pointsToAdd, edgesToAdd, dbIdToWaypointMap);
-} else {
-    console.log("No junctions found. Proceeding to simple corners.");
-}
+    stmt.free();
+
+    const junctions = [];
+    for (const [id, neighbors] of adj.entries()) {
+        if (neighbors.size > 2) {
+            junctions.push(id);
+        }
+    }
+    if (junctions.length > 0) {
+        console.log(`Found ${junctions.length} junctions. Rebuilding...`);
+        const numPointsInArc = 10;
+        const idsToDelete = new Set();
+        const pointsToAdd = [];
+        const edgesToAdd = [];
+        let tempPointCounter = 0;
+
+        for (const junctionId of junctions) {
+            const neighbors = Array.from(adj.get(junctionId));
+            const p_j = dbIdToWaypointMap.get(junctionId).pos;
+
+            for (let i = 0; i < neighbors.length; i++) {
+                for (let j = i + 1; j < neighbors.length; j++) {
+                    const p1_id = neighbors[i];
+                    const p2_id = neighbors[j];
+                    const p1 = dbIdToWaypointMap.get(p1_id).pos;
+                    const p2 = dbIdToWaypointMap.get(p2_id).pos;
+
+                    const v1 = new THREE.Vector3().subVectors(p1, p_j).normalize();
+                    const v2 = new THREE.Vector3().subVectors(p2, p_j).normalize();
+                    const dotProduct = v1.dot(v2);
+                    
+                    if (dotProduct < -0.999) continue;
+                    const turn_angle = Math.PI - Math.acos(dotProduct);
+                    if (turn_angle < 0.01) continue;
+                    
+                    const idealTangentDist = R / Math.tan(turn_angle / 2);
+                    const dist1 = p_j.distanceTo(p1);
+                    const dist2 = p_j.distanceTo(p2);
+                    const trimDist = idealTangentDist;
+                    if (trimDist < 0.1) continue;
+
+                    const startPoint = new THREE.Vector3().lerpVectors(p_j, p1, trimDist / dist1);
+                    const endPoint = new THREE.Vector3().lerpVectors(p_j, p2, trimDist / dist2);
+                    
+                    const entryRos = this.threeToRos(startPoint.clone().add(this.mapOffset));
+                    const exitRos = this.threeToRos(endPoint.clone().add(this.mapOffset));
+                    insertJunctionStmt.run([junctionId, p1_id, p2_id, entryRos.x, entryRos.y, entryRos.z, exitRos.x, exitRos.y, exitRos.z]);
+                    insertJunctionStmt.run([junctionId, p2_id, p1_id, exitRos.x, exitRos.y, exitRos.z, entryRos.x, entryRos.y, entryRos.z]);
+
+                    // ==========================================================
+                    //  NEW: Find the physically closest nodes to attach the curve to.
+                    // ==========================================================
+                    const connectToId1 = this.findClosestNodeOnBranch(p1_id, junctionId, startPoint, adj, dbIdToWaypointMap);
+                    const connectToId2 = this.findClosestNodeOnBranch(p2_id, junctionId, endPoint, adj, dbIdToWaypointMap);
+                    // ==========================================================
+
+                    const curve = new THREE.QuadraticBezierCurve3(startPoint, p_j, endPoint);
+                    const arcPoints = curve.getPoints(numPointsInArc);                
+                    
+                    // **THE FIX**: Start the new chain from the CORRECTED connection ID.
+                    let lastPointId = connectToId1; 
+                    
+                    for (let k = 1; k < arcPoints.length - 1; k++) {
+                        const tempId = `new_${tempPointCounter++}`;
+                        pointsToAdd.push({ tempId, pos: arcPoints[k] });
+                        edgesToAdd.push({ from: lastPointId, to: tempId });
+                        lastPointId = tempId;
+                    }
+                    // **THE FIX**: End the new chain at the CORRECTED connection ID.
+                    edgesToAdd.push({ from: lastPointId, to: connectToId2 });
+                }
+            }
+        }
+        await this.applyGraphModifications(idsToDelete, pointsToAdd, edgesToAdd, dbIdToWaypointMap);
+    } else {
+        console.log("No junctions found. Proceeding to simple corners.");
+    }
 
     // ======================================================================
-    // PART 2: PROCESS SIMPLE CORNERS (Nodes with 2 edges)
+    // PART 2: PROCESS SIMPLE CORNERS (Unchanged)
     // ======================================================================
     console.log("--- Part 2: Smoothing simple corners... ---");
 
-    // 2a. CRITICAL: Refresh graph data from DB after potential modifications
     await this.refreshWaypointsFromDB();
     adj = new Map();
     dbIdToWaypointMap = new Map();
@@ -939,7 +963,6 @@ if (junctions.length > 0) {
     }
     stmt.free();
 
-    // 2b. Find all simple corners in the NEW graph
     const cornerNodeIds = [];
     for (const [id, neighbors] of adj.entries()) {
         if (neighbors.size === 2) {
@@ -947,7 +970,6 @@ if (junctions.length > 0) {
         }
     }
 
-    // 2c. If corners exist, run the "1.5 pass" update logic
     if (cornerNodeIds.length > 0) {
         const halfIndex = Math.ceil(cornerNodeIds.length / 2);
         const nodesToProcess = [...cornerNodeIds, ...cornerNodeIds.slice(0, halfIndex)];
@@ -968,12 +990,56 @@ if (junctions.length > 0) {
     }
 
     // --- Final Cleanup ---
+    insertJunctionStmt.free();
+    console.log("✅ Junction entry/exit points saved to the database.");
     console.log("✅ Full graph processing complete!");
     await this.refreshWaypointsFromDB();
-    await this.drawLane();
     this.hideLoader();
-    this.clearLane();
 }
+
+
+
+/**
+     * Walks along a branch away from a junction to find the existing node that is
+     * physically closest to a target point (the start of a new curve).
+     * @param {number} startNodeId - The direct neighbor of the junction to start searching from.
+     * @param {number} prevNodeId - The ID of the junction center, to prevent walking backwards.
+     * @param {THREE.Vector3} targetPoint - The 3D point we want to be close to.
+     * @param {Map<number, Set<number>>} adj - The adjacency list of the graph.
+     * @param {Map<number, object>} dbIdToWaypointMap - Map of all waypoints.
+     * @returns {number} The ID of the closest waypoint found on the branch.
+     */
+    findClosestNodeOnBranch(startNodeId, prevNodeId, targetPoint, adj, dbIdToWaypointMap) {
+        let bestNodeId = startNodeId;
+        let minDistance = dbIdToWaypointMap.get(startNodeId).pos.distanceTo(targetPoint);
+        
+        let currentNodeId = startNodeId;
+        let previousNodeId = prevNodeId;
+        
+        // Walk away from the junction for a max of 20 steps to find a better connection point.
+        for (let i = 0; i < 20; i++) {
+            const neighbors = adj.get(currentNodeId);
+            if (!neighbors) break;
+
+            // Find the next node in the chain that isn't the one we just came from.
+            const nextNodeId = Array.from(neighbors).find(n => n !== previousNodeId);
+            if (!nextNodeId) break;
+
+            const dist = dbIdToWaypointMap.get(nextNodeId).pos.distanceTo(targetPoint);
+            if (dist < minDistance) {
+                // This node is a better candidate.
+                minDistance = dist;
+                bestNodeId = nextNodeId;
+            } else {
+                // If the distance starts increasing, it means we've passed the closest point.
+                break;
+            }
+
+            previousNodeId = currentNodeId;
+            currentNodeId = nextNodeId;
+        }
+        return bestNodeId;
+    }
 
 /**
  * Applies complex modifications (deletions, additions) for JUNCTIONS.
@@ -1164,73 +1230,223 @@ getIdsBetween(start_id, end_id, adj) {
     // ====================================================================
 
     /**
- * Generate lane geometry by drawing a segment for each individual edge in the graph.
- * This correctly handles any graph structure, including complex intersections.
- * @async
+     * Walks along a path from a starting node and returns the ID of the destination node.
+     * @param {number} startNodeId - The ID of the waypoint to start from.
+     * @param {number} prevNodeId - The ID of the node we came from (to prevent walking backwards).
+     * @param {number} numSteps - The number of steps to walk.
+     * @param {Map<number, Array<number>>} adj - A simple adjacency list.
+     * @returns {number} The ID of the waypoint at the end of the walk.
+     */
+    walkToNode(startNodeId, prevNodeId, numSteps, adj) {
+        let currentNodeId = startNodeId;
+        let previousNodeId = prevNodeId;
+        for (let i = 0; i < numSteps; i++) {
+            const neighbors = adj.get(currentNodeId);
+            if (!neighbors) return currentNodeId; // Stop if we can't go further
+
+            const nextNodeId = neighbors.find(n_id => n_id !== previousNodeId);
+            if (!nextNodeId) return currentNodeId; // Stop at end of the line
+
+            previousNodeId = currentNodeId;
+            currentNodeId = nextNodeId;
+        }
+        return currentNodeId;
+    }
+
+    /**
+     * Finds the shortest path between two nodes using Breadth-First Search (BFS).
+     * @param {number} startNodeId - The ID of the starting waypoint.
+     * @param {number} endNodeId - The ID of the target waypoint.
+     * @param {Map<number, Array<number>>} adj - A simple adjacency list.
+     * @returns {Array<string>} An array of all edge keys (e.g., ["1-2", "2-3"]) on the path.
+     */
+    findPathBetween(startNodeId, endNodeId, adj) {
+        const queue = [[startNodeId]]; // Queue stores paths
+        const visited = new Set([startNodeId]);
+
+        while (queue.length > 0) {
+            const path = queue.shift();
+            const lastNode = path[path.length - 1];
+
+            if (lastNode === endNodeId) {
+                // Path found! Convert the list of nodes into a list of edge keys.
+                const edgesOnPath = new Set();
+                for (let i = 0; i < path.length - 1; i++) {
+                    const id1 = path[i];
+                    const id2 = path[i + 1];
+                    const key = id1 < id2 ? `${id1}-${id2}` : `${id2}-${id1}`;
+                    edgesOnPath.add(key);
+                }
+                return Array.from(edgesOnPath);
+            }
+
+            const neighbors = adj.get(lastNode) || [];
+            for (const neighbor of neighbors) {
+                if (!visited.has(neighbor)) {
+                    visited.add(neighbor);
+                    const newPath = [...path, neighbor];
+                    queue.push(newPath);
+                }
+            }
+        }
+        return []; // Return empty array if no path is found
+    }
+
+
+    /**
+ * Finds all edges on paths from a junction to its nearest neighboring junctions.
+ * Uses BFS and stops each path when it hits another junction (node with >2 edges).
+ *
+ * @param {number} junctionId - The ID of the junction to start the search from.
+ * @param {Map<number, Array<number>>} adj - The adjacency list of the graph.
+ * @returns {Set<string>} A Set containing all the edge keys (e.g., "1-2") found.
  */
-async drawLane() {
+/**
+ * From a given junction, finds paths to its nearest neighboring junctions.
+ * Each path is the sequence of edges between the start junction
+ * and the first other junction (>2 degree) it hits in that direction.
+ *
+ * @param {number} junctionId - The junction node ID.
+ * @param {Map<number, Array<number>>} adj - Graph adjacency list.
+ * @returns {Array<Array<string>>} Array of paths, each path is an array of edge keys ("id1-id2").
+ */
+findPathsToNearestJunctions(junctionId, adj) {
+    const paths = [];
+
+    if (!adj.has(junctionId) || adj.get(junctionId).length <= 2) {
+        return paths; // not a junction
+    }
+
+    for (const startNeighbor of adj.get(junctionId)) {
+        const pathEdges = [];
+        let prev = junctionId;
+        let curr = startNeighbor;
+
+        // add first edge
+        pathEdges.push(
+            prev < curr ? `${prev}-${curr}` : `${curr}-${prev}`
+        );
+
+        while (true) {
+            const neighbors = adj.get(curr);
+
+            // If this node is a junction (degree > 2), stop here
+            if (neighbors.length > 2) {
+                paths.push(pathEdges);
+                break;
+            }
+
+            // If dead end, discard
+            if (neighbors.length === 1) {
+                break;
+            }
+
+            // Otherwise degree == 2 → continue walking
+            const next = neighbors.find(n => n !== prev);
+            if (next == null) break;
+
+            pathEdges.push(
+                curr < next ? `${curr}-${next}` : `${next}-${curr}`
+            );
+
+            prev = curr;
+            curr = next;
+        }
+    }
+
+    return paths;
+}
+
+
+
+
+    /**
+        * Generates lane geometry, skipping only the direct path segments between an
+        * entry and exit point of a junction turn.
+        * @async
+        */
+       async drawLane() {
     this.clearLane();
     if (!this.db) return;
 
-    // Step 1: Load all waypoints into a map for quick lookups.
+    // Step 1: Load graph data and build adjacency list.
     const dbIdToWaypointMap = new Map();
+    const simpleAdj = new Map();
     let stmt = this.db.prepare("SELECT id, x, y, z, width_left, width_right FROM waypoints");
-    while(stmt.step()) {
+    while (stmt.step()) {
         const row = stmt.getAsObject();
         dbIdToWaypointMap.set(row.id, {
             ...row,
-            pos: this.rosToThree({x: row.x, y: row.y, z: row.z}).sub(this.mapOffset)
+            pos: this.rosToThree({ x: row.x, y: row.y, z: row.z }).sub(this.mapOffset)
         });
+        simpleAdj.set(row.id, []);
     }
     stmt.free();
 
     if (dbIdToWaypointMap.size < 2) return;
 
-    // Step 2: Get all the edges from the graph.
     stmt = this.db.prepare("SELECT id1, id2 FROM edge_graph");
     const edges = [];
     while (stmt.step()) {
         const [id1, id2] = stmt.get();
         edges.push({ id1, id2 });
+        simpleAdj.get(id1).push(id2);
+        simpleAdj.get(id2).push(id1);
     }
     stmt.free();
 
-    // Step 3: Iterate over every edge and draw a two-point lane segment for it.
+    // Step 2: Build the list of edges to skip.
+    const edgesToSkip = new Set();
+
+    // Find all junctions in the graph.
+    for (const [j_id, neighbors] of simpleAdj.entries()) {
+        if (neighbors.length <= 2) continue; // not a junction
+
+        // Get all corridor paths from this junction to its nearest neighbor junctions.
+        const junctionPaths = this.findPathsToNearestJunctions(j_id, simpleAdj);
+
+        // Flatten the paths into the skip list.
+        for (const path of junctionPaths) {
+            for (const edgeKey of path) {
+                edgesToSkip.add(edgeKey);
+            }
+        }
+    }
+
+    console.log("Edges to skip:", Array.from(edgesToSkip));
+
+    // Step 3: Iterate over every edge and draw a lane unless it's in our skip list.
     for (const edge of edges) {
+        const edgeKey = edge.id1 < edge.id2 ? `${edge.id1}-${edge.id2}` : `${edge.id2}-${edge.id1}`;
+        if (edgesToSkip.has(edgeKey)) {
+            continue; // skip junction-to-junction corridor edges
+        }
+
         const p1_data = dbIdToWaypointMap.get(edge.id1);
         const p2_data = dbIdToWaypointMap.get(edge.id2);
 
-        // Ensure both points for the edge exist before drawing.
         if (!p1_data || !p2_data) continue;
 
         const waypointsData = [p1_data, p2_data];
         const leftVerts = [];
         const rightVerts = [];
 
-        // This geometry logic is the same, but now it only runs on two points at a time.
         for (let i = 0; i < waypointsData.length; i++) {
             const p_curr = waypointsData[i].pos;
             const halfWidthLeft = (waypointsData[i].width_left || 0.5);
             const halfWidthRight = (waypointsData[i].width_right || 0.5);
-
             let normal;
-            if (i === 0) { // Start of the segment
-                const dir_out = waypointsData[i+1].pos.clone().sub(p_curr).normalize();
-                // normal = new THREE.Vector3(-dir_out.y, 0, 0).normalize();
+            if (i === 0) {
+                const dir_out = waypointsData[i + 1].pos.clone().sub(p_curr).normalize();
                 normal = new THREE.Vector3(-dir_out.y, dir_out.x, 0).normalize();
-
-            } else { // End of the segment
-                const dir_in = p_curr.clone().sub(waypointsData[i-1].pos).normalize();
-                // normal = new THREE.Vector3(-dir_in.y, 0, 0).normalize();
-
+            } else {
+                const dir_in = p_curr.clone().sub(waypointsData[i - 1].pos).normalize();
                 normal = new THREE.Vector3(-dir_in.y, dir_in.x, 0).normalize();
             }
-
             leftVerts.push(p_curr.clone().add(normal.clone().multiplyScalar(halfWidthLeft)));
             rightVerts.push(p_curr.clone().sub(normal.clone().multiplyScalar(halfWidthRight)));
         }
 
-        // Create the fill mesh for this segment
         const fillVertices = [
             leftVerts[0].x, leftVerts[0].y, leftVerts[0].z,
             rightVerts[0].x, rightVerts[0].y, rightVerts[0].z,
@@ -1238,7 +1454,6 @@ async drawLane() {
             rightVerts[1].x, rightVerts[1].y, rightVerts[1].z
         ];
         const indices = [0, 1, 2, 2, 1, 3];
-
         const fillGeometry = new THREE.BufferGeometry();
         fillGeometry.setAttribute('position', new THREE.Float32BufferAttribute(fillVertices, 3));
         fillGeometry.setIndex(indices);
@@ -1246,13 +1461,13 @@ async drawLane() {
         const fillMesh = new THREE.Mesh(fillGeometry, fillMaterial);
         this.pathGroup.add(fillMesh);
 
-        // Create the boundary lines for this segment
         const boundaryMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthTest: false });
         const leftLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(leftVerts), boundaryMaterial);
         const rightLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(rightVerts), boundaryMaterial);
         this.pathGroup.add(leftLine, rightLine);
     }
 }
+
 
     /**
      * Clear all lane geometry from the scene
@@ -1602,6 +1817,7 @@ async drawLane() {
             // Ensure the edge_graph table exists. If it already does, this command does nothing.
             // This prevents errors when loading a DB that was created before the graph feature was added.
             this.db.run(EDGE_GRAPH_TABLE_SQL);
+            this.db.run(JUNCTION_POINTS_TABLE_SQL);
             // ===================== FIX 1 END =======================
 
             // Ensure all required columns exist
@@ -1742,50 +1958,54 @@ async drawLane() {
      */
     findClosestPoint(event) {
         if (!this.waypointsObject || !this.camera) return -1;
-    
-        if (this.camera.isPerspectiveCamera) {
-            // 3D Perspective View: Use raycasting with a generous threshold.
-            const rect = this.renderer.domElement.getBoundingClientRect();
-            this.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-            this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-    
-            // Use a multiplier to make selection easier
-            this.raycaster.params.Points.threshold = this.dynamicPointSize * 5; 
-            this.raycaster.setFromCamera(this.pointer, this.camera);
-    
-            const intersects = this.raycaster.intersectObject(this.waypointsObject);
-            return (intersects.length > 0) ? intersects[0].index : -1;
-        } else {
-            // Top-Down Orthographic View: Use a screen-space pixel search.
-            const rect = this.renderer.domElement.getBoundingClientRect();
-            const mouse = { x: event.clientX - rect.left, y: event.clientY - rect.top };
-    
-            // Increased hit radius for easier selection
-            const hitRadius = 20; 
-            let closestPointIndex = -1;
-            let minDistanceSq = Infinity;
-    
-            const positions = this.waypointsObject.geometry.attributes.position;
-            const tempVec = new THREE.Vector3();
-    
-            for (let i = 0; i < positions.count; i++) {
-                tempVec.fromBufferAttribute(positions, i);
-                tempVec.project(this.camera);
-    
-                const screenX = (tempVec.x * 0.5 + 0.5) * rect.width;
-                const screenY = (-tempVec.y * 0.5 + 0.5) * rect.height;
-    
-                const dx = mouse.x - screenX;
-                const dy = mouse.y - screenY;
-                const distanceSq = dx * dx + dy * dy;
-    
-                if (distanceSq < minDistanceSq && distanceSq < hitRadius * hitRadius) {
-                    minDistanceSq = distanceSq;
-                    closestPointIndex = i;
-                }
-            }
-            return closestPointIndex;
+
+        const rect = this.renderer.domElement.getBoundingClientRect();
+        const mouse = {
+            x: event.clientX - rect.left,
+            y: event.clientY - rect.top
+        };
+        const pointerNDC = {
+            x: (mouse.x / rect.width) * 2 - 1,
+            y: -(mouse.y / rect.height) * 2 + 1
+        };
+
+        this.raycaster.params.Points.threshold = this.dynamicPointSize * 5; // A generous radius
+        this.raycaster.setFromCamera(pointerNDC, this.camera);
+
+        const intersects = this.raycaster.intersectObject(this.waypointsObject);
+
+        if (intersects.length === 0) {
+            return -1;
         }
+
+        // If we only hit one point, it's our target.
+        if (intersects.length === 1) {
+            return intersects[0].index;
+        }
+
+        // If we hit multiple points, find the one closest to the mouse on the 2D screen.
+        let closestPointIndex = -1;
+        let minDistanceSq = Infinity;
+        const tempVec = new THREE.Vector3();
+        const positions = this.waypointsObject.geometry.attributes.position;
+
+        for (const hit of intersects) {
+            tempVec.fromBufferAttribute(positions, hit.index);
+            tempVec.project(this.camera);
+
+            const screenX = (tempVec.x * 0.5 + 0.5) * rect.width;
+            const screenY = (-tempVec.y * 0.5 + 0.5) * rect.height;
+
+            const dx = mouse.x - screenX;
+            const dy = mouse.y - screenY;
+            const distanceSq = dx * dx + dy * dy;
+
+            if (distanceSq < minDistanceSq) {
+                minDistanceSq = distanceSq;
+                closestPointIndex = hit.index;
+            }
+        }
+        return closestPointIndex;
     }
 
     /**
@@ -1828,7 +2048,7 @@ async drawLane() {
      * * @param {PointerEvent} event - Pointer event
      */
     handleHover(event) {
-        if (!this.camera || this.editMode || this.isDraggingPoint || this.isMarqueeSelecting || !this.waypointsObject || this.isPersistentDrawing) {
+        if (!this.camera || this.isDraggingPoint || this.isMarqueeSelecting || !this.waypointsObject || this.isPersistentDrawing) {
             if (this.hoverIndicator.visible) {
                 this.hoveredPointIndex = null;
                 this.hoverIndicator.visible = false;
@@ -1842,14 +2062,14 @@ async drawLane() {
             if (this.hoveredPointIndex !== null) {
                 this.hoveredPointIndex = null;
                 this.hoverIndicator.visible = false;
-                this.clearWaypointInfo();
+                // this.clearWaypointInfo(); // <--- REMOVE THIS LINE
             }
         } else if (this.hoveredPointIndex !== index) {
             this.hoveredPointIndex = index;
             const pos = new THREE.Vector3().fromBufferAttribute(this.waypointsObject.geometry.attributes.position, index);
             this.hoverIndicator.position.copy(pos);
             this.hoverIndicator.visible = true;
-            this.updateWaypointInfo(index);
+            // this.updateWaypointInfo(index); // <--- REMOVE THIS LINE
         }
     }
 
@@ -2326,58 +2546,66 @@ async drawLane() {
     // INFO PANEL AND UI UPDATES
     // ====================================================================
 
-    /**
-     * Update waypoint information display
-     * * @param {number} waypointIndex - Index of waypoint to display info for
-     */
-    updateWaypointInfo(waypointIndex) {
-        if (!this.db || waypointIndex < 0 || waypointIndex >= this.indexToDbId.length) {
-            this.clearWaypointInfo();
-            return;
-        }
-
-        try {
-            const dbId = this.indexToDbId[waypointIndex];
-            const stmt = this.db.prepare("SELECT x, y, z, roll, pitch, yaw FROM waypoints WHERE id = ?");
-            const result = stmt.get(dbId);
-            stmt.free();
-
-            if (result) {
-                const waypointInfo = document.getElementById('waypoint-info');
-                if (waypointInfo) {
-                    waypointInfo.classList.remove('hidden');
-                    document.getElementById('coord-x').textContent = (result[0] || 0).toFixed(4);
-                    document.getElementById('coord-y').textContent = (result[1] || 0).toFixed(4);
-                    document.getElementById('coord-z').textContent = (result[2] || 0).toFixed(4);
-                    document.getElementById('waypoint-id').textContent = dbId.toString();
-                }
-            }
-        } catch (error) {
-            console.error('Error updating waypoint info:', error);
-            this.clearWaypointInfo();
-        }
-    }
-
-    /**
-     * Clear waypoint information display
-     */
-    clearWaypointInfo() {
-        const waypointInfo = document.getElementById('waypoint-info');
-        if (waypointInfo) {
-            waypointInfo.classList.add('hidden');
-        }
-    }
-
-    /**
-     * Update waypoint count display
-     */
     updateWaypointCount() {
-        const waypointCount = document.getElementById('waypoint-count');
-        if (waypointCount) {
-            waypointCount.textContent = this.indexToDbId.length.toString();
+    const waypointCount = document.getElementById('waypoint-count');
+    if (waypointCount) {
+        waypointCount.textContent = this.indexToDbId.length.toString();
+    }
+}
+
+    /**
+ * Clear waypoint information display or reset it to a default state.
+ */
+clearWaypointInfo() {
+    const waypointInfo = document.getElementById('waypoint-info');
+    if (waypointInfo) {
+        // Instead of hiding the panel, reset the text.
+        let idText = 'None';
+        if (this.selectedIndices.size > 1) {
+            // Display a count if multiple points are selected.
+            idText = `${this.selectedIndices.size} Selected`;
+            
         }
+
+        document.getElementById('waypoint-id').textContent = idText;
+        document.getElementById('coord-x').textContent = '---';
+        document.getElementById('coord-y').textContent = '---';
+        document.getElementById('coord-z').textContent = '---';
+    }
+}
+    /**
+ * Update waypoint information display
+ * @param {number} waypointIndex - Index of waypoint to display info for
+ */
+updateWaypointInfo(waypointIndex) {
+    if (!this.db || waypointIndex < 0 || waypointIndex >= this.indexToDbId.length) {
+        this.clearWaypointInfo();
+        return;
     }
 
+    try {
+        const dbId = this.indexToDbId[waypointIndex];
+        const stmt = this.db.prepare("SELECT x, y, z, roll, pitch, yaw FROM waypoints WHERE id = ?");
+        const result = stmt.get([dbId]);
+        stmt.free();
+
+        if (result) {   
+            const waypointInfo = document.getElementById('waypoint-info');
+            console.log("Database result for selected point:", result);
+            if (waypointInfo) {
+                // The line that was here has been removed.
+
+                document.getElementById('coord-x').textContent = (result[0] || 0).toFixed(4);
+                document.getElementById('coord-y').textContent = (result[1] || 0).toFixed(4);
+                document.getElementById('coord-z').textContent = (result[2] || 0).toFixed(4);
+                document.getElementById('waypoint-id').textContent = dbId.toString();
+            }
+        }
+    } catch (error) {
+        console.error('Error updating waypoint info:', error);
+        this.clearWaypointInfo();
+    }
+}
     // ====================================================================
     // LANE EDITING INTERFACE
     // ====================================================================
@@ -3354,7 +3582,6 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
         document.getElementById('delete-lane').addEventListener('click', () => this.clearLane());
         document.getElementById('tool-edit-lane').addEventListener('click', () => this.selectTool('edit-lane'));
 
-        document.getElementById('generate-turn').addEventListener('click', () => this.generateturn());
 
         // Lane width controls
         ['left', 'right'].forEach(side => {
@@ -3369,6 +3596,9 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
             });
             input.addEventListener('change', () => this.applyAndRegenerateLaneWidth(side));
         });
+
+
+        document.getElementById('generate-turn').addEventListener('click', () => this.generateturn());
 
         // Visual controls
         const voxelSizeSlider = document.getElementById('voxel-size');
@@ -3524,7 +3754,16 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
         this.clearSelection();
         this.clearShapeSelection();
         this.setEditMode(tabName);
-        
+        const waypointInfoPanel = document.getElementById('waypoint-info');
+        if (waypointInfoPanel) {
+            if (tabName === 'waypoint-edit') {
+                waypointInfoPanel.classList.remove('hidden');
+                // Immediately update the panel to reflect the current selection
+                this.updateInfoPanel();
+            } else {
+                waypointInfoPanel.classList.add('hidden');
+            }
+        }
         // NEW: Ensure we exit persistent drawing mode when switching tabs.
         if (this.isPersistentDrawing) {
             this.exitPersistentDrawing();

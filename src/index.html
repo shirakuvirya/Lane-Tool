@@ -48,6 +48,9 @@
                 Layout Drawings
             </button>
         </div>
+        <div>
+             <h4>ViryaOS-Lane-Studio</h4>
+        </div>
 
         <div id="file-control">
             <label class="file-label" title="Load point cloud files (PCD/PLY format)">
@@ -101,9 +104,9 @@
         <div class="turn-control">
                 <label for="vehicle-select-turn">Vehicle Type:</label>
                 <select id="vehicle-select-turn" title="Select vehicle type to determine lane width">
-                    <option value="0.5">AMR-10 (0.5m width)</option>
-                    <option value="0.75">ARM-50 (0.75m width)</option>
-                    <option value="1.0" selected>Buggy (1.0m width)</option>
+                    <option value="1.65">AMR-10</option>
+                    <option value="1.6">ARM-50</option>
+                    <option value="1.0" selected>Buggy</option>
                 </select>
         </div>
         <div class="actions">
@@ -167,7 +170,7 @@
             <h3>Waypoint Information</h3>
         </div>
 
-        <div id="waypoint-info" class="info-section hidden">
+        <div id="waypoint-info" class="info-section">
             <h4>Selected Waypoint</h4>
             <div class="coord-display">
                 <div class="coord-row">
@@ -223,8 +226,8 @@
             <div class="lane-control">
                 <label for="vehicle-select">Vehicle Type:</label>
                 <select id="vehicle-select" title="Select vehicle type to determine lane width">
-                    <option value="0.5">AMR-10 (0.5m width)</option>
-                    <option value="0.75">ARM-50 (0.75m width)</option>
+                    <option value="0.6">AMR-10 (1.2m width)</option>
+                    <option value="0.7">ARM-50 (1.4m width)</option>
                     <option value="1.0" selected>Buggy (1.0m width)</option>
                 </select>
             </div>
