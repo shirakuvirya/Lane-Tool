@@ -800,7 +800,9 @@ class ViryaOSLaneStudio {
         this.isEditingText = false;
     }
 
-    /**
+    
+
+  /**
  * Master function to process the entire waypoint graph. It first rebuilds complex
  * junctions (nodes with >2 edges) and then smooths all simple corners (nodes with 2 edges)
  * in a comprehensive two-part process.
@@ -848,7 +850,6 @@ for (const [id, neighbors] of adj.entries()) {
         junctions.push(id);
     }
 }
-
 // 1c. If junctions exist, run the rebuild logic
 if (junctions.length > 0) {
     console.log(`Found ${junctions.length} junctions. Rebuilding...`);
@@ -890,16 +891,16 @@ if (junctions.length > 0) {
                 const dist2 = p_j.distanceTo(p2);
                 
                 // Clamp the ideal distance to prevent the curve extending beyond the immediate neighbors
-                const trimDist = Math.min(idealTangentDist, dist1 * 0.9, dist2 * 0.9);
+                const trimDist = idealTangentDist// Math.min(, dist1 * 0.9, dist2 * 0.9);
                 if (trimDist < 0.1) continue;
 
                 const startPoint = new THREE.Vector3().lerpVectors(p_j, p1, trimDist / dist1);
                 const endPoint = new THREE.Vector3().lerpVectors(p_j, p2, trimDist / dist2);
 
                 const curve = new THREE.QuadraticBezierCurve3(startPoint, p_j, endPoint);
-                const arcPoints = curve.getPoints(numPointsInArc);
-
+                const arcPoints = curve.getPoints(numPointsInArc);                
                 let lastPointId = p1_id;
+                
                 for (let k = 1; k < arcPoints.length - 1; k++) {
                     const tempId = `new_${tempPointCounter++}`;
                     pointsToAdd.push({ tempId, pos: arcPoints[k] });
@@ -1131,6 +1132,7 @@ getIdsBetween(start_id, end_id, adj) {
     return [];
 }
 
+
     // ====================================================================
     // STYLE APPLICATION METHODS
     // ====================================================================
@@ -1162,110 +1164,95 @@ getIdsBetween(start_id, end_id, adj) {
     // ====================================================================
 
     /**
-     * Generate lane geometry from waypoint data.
-     * Creates a dark grey mesh for the fill and two white lines for the boundaries.
-     * * @async
-     */
-    async drawLane() {
-        this.clearLane();
-        if (!this.db) return;
+ * Generate lane geometry by drawing a segment for each individual edge in the graph.
+ * This correctly handles any graph structure, including complex intersections.
+ * @async
+ */
+async drawLane() {
+    this.clearLane();
+    if (!this.db) return;
 
-        const stmt = this.db.prepare("SELECT x, y, z, width_left, width_right FROM waypoints ORDER BY id;");
-        const waypointsData = [];
+    // Step 1: Load all waypoints into a map for quick lookups.
+    const dbIdToWaypointMap = new Map();
+    let stmt = this.db.prepare("SELECT id, x, y, z, width_left, width_right FROM waypoints");
+    while(stmt.step()) {
+        const row = stmt.getAsObject();
+        dbIdToWaypointMap.set(row.id, {
+            ...row,
+            pos: this.rosToThree({x: row.x, y: row.y, z: row.z}).sub(this.mapOffset)
+        });
+    }
+    stmt.free();
 
-        while(stmt.step()) {
-            const row = stmt.getAsObject();
-            // Skip origin points (0,0,0)
-            if (!(row.x === 0 && row.y === 0 && row.z === 0)) {
-                waypointsData.push({
-                    ...row,
-                    pos: this.rosToThree({x: row.x, y: row.y, z: row.z}).sub(this.mapOffset)
-                });
-            }
-        }
-        stmt.free();
+    if (dbIdToWaypointMap.size < 2) return;
 
-        if (waypointsData.length < 2) return;
+    // Step 2: Get all the edges from the graph.
+    stmt = this.db.prepare("SELECT id1, id2 FROM edge_graph");
+    const edges = [];
+    while (stmt.step()) {
+        const [id1, id2] = stmt.get();
+        edges.push({ id1, id2 });
+    }
+    stmt.free();
 
+    // Step 3: Iterate over every edge and draw a two-point lane segment for it.
+    for (const edge of edges) {
+        const p1_data = dbIdToWaypointMap.get(edge.id1);
+        const p2_data = dbIdToWaypointMap.get(edge.id2);
+
+        // Ensure both points for the edge exist before drawing.
+        if (!p1_data || !p2_data) continue;
+
+        const waypointsData = [p1_data, p2_data];
         const leftVerts = [];
         const rightVerts = [];
 
-        // Generate lane boundary vertices with miter joints
+        // This geometry logic is the same, but now it only runs on two points at a time.
         for (let i = 0; i < waypointsData.length; i++) {
             const p_curr = waypointsData[i].pos;
             const halfWidthLeft = (waypointsData[i].width_left || 0.5);
             const halfWidthRight = (waypointsData[i].width_right || 0.5);
 
-            let normal, miterScale = 1.0;
-
-            if (i === 0) {
+            let normal;
+            if (i === 0) { // Start of the segment
                 const dir_out = waypointsData[i+1].pos.clone().sub(p_curr).normalize();
+                // normal = new THREE.Vector3(-dir_out.y, 0, 0).normalize();
                 normal = new THREE.Vector3(-dir_out.y, dir_out.x, 0).normalize();
-            } else if (i === waypointsData.length - 1) {
+
+            } else { // End of the segment
                 const dir_in = p_curr.clone().sub(waypointsData[i-1].pos).normalize();
+                // normal = new THREE.Vector3(-dir_in.y, 0, 0).normalize();
+
                 normal = new THREE.Vector3(-dir_in.y, dir_in.x, 0).normalize();
-            } else {
-                const dir_in = p_curr.clone().sub(waypointsData[i-1].pos).normalize();
-                const dir_out = waypointsData[i+1].pos.clone().sub(p_curr).normalize();
-                const normal_in = new THREE.Vector3(-dir_in.y, dir_in.x, 0);
-                const normal_out = new THREE.Vector3(-dir_out.y, dir_out.x, 0);
-                normal = normal_in.clone().add(normal_out).normalize();
-                const dot = normal_in.dot(normal);
-                if (Math.abs(dot) > 0.0001) miterScale = 1 / dot;
             }
 
-            leftVerts.push(p_curr.clone().add(normal.clone().multiplyScalar(halfWidthLeft * miterScale)));
-            rightVerts.push(p_curr.clone().sub(normal.clone().multiplyScalar(halfWidthRight * miterScale)));
+            leftVerts.push(p_curr.clone().add(normal.clone().multiplyScalar(halfWidthLeft)));
+            rightVerts.push(p_curr.clone().sub(normal.clone().multiplyScalar(halfWidthRight)));
         }
 
-        // 1. CREATE THE DARK GREY FILL MESH
-        const fillVertices = [];
-        for (let i = 0; i < waypointsData.length; i++) {
-            fillVertices.push(leftVerts[i].x, leftVerts[i].y, leftVerts[i].z);
-            fillVertices.push(rightVerts[i].x, rightVerts[i].y, rightVerts[i].z);
-        }
-
-        const indices = [];
-        for (let i = 0; i < waypointsData.length - 1; i++) {
-            const i2 = i * 2;
-            indices.push(i2, i2 + 1, i2 + 2, i2 + 2, i2 + 1, i2 + 3);
-        }
+        // Create the fill mesh for this segment
+        const fillVertices = [
+            leftVerts[0].x, leftVerts[0].y, leftVerts[0].z,
+            rightVerts[0].x, rightVerts[0].y, rightVerts[0].z,
+            leftVerts[1].x, leftVerts[1].y, leftVerts[1].z,
+            rightVerts[1].x, rightVerts[1].y, rightVerts[1].z
+        ];
+        const indices = [0, 1, 2, 2, 1, 3];
 
         const fillGeometry = new THREE.BufferGeometry();
         fillGeometry.setAttribute('position', new THREE.Float32BufferAttribute(fillVertices, 3));
         fillGeometry.setIndex(indices);
-
-        const fillMaterial = new THREE.MeshBasicMaterial({
-            color: 0x404040, // Dark grey color
-            transparent: true,
-            opacity: 0.8,
-            side: THREE.DoubleSide
-        });
-
+        const fillMaterial = new THREE.MeshBasicMaterial({ color: 0x404040, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
         const fillMesh = new THREE.Mesh(fillGeometry, fillMaterial);
-        fillMesh.renderOrder = -1; // Render behind other objects
         this.pathGroup.add(fillMesh);
 
-        // 2. CREATE THE WHITE BOUNDARY LINES
-        const boundaryMaterial = new THREE.LineBasicMaterial({
-            color: 0xffffff, // White color
-            transparent: true,
-            opacity: 0.9,
-            depthTest: false // Ensure lines are visible
-        });
-
-        // Left boundary
-        const leftLineGeometry = new THREE.BufferGeometry().setFromPoints(leftVerts);
-        const leftLine = new THREE.Line(leftLineGeometry, boundaryMaterial);
-        leftLine.renderOrder = 0; // Render on top of the fill
-        this.pathGroup.add(leftLine);
-
-        // Right boundary
-        const rightLineGeometry = new THREE.BufferGeometry().setFromPoints(rightVerts);
-        const rightLine = new THREE.Line(rightLineGeometry, boundaryMaterial);
-        rightLine.renderOrder = 0; // Render on top of the fill
-        this.pathGroup.add(rightLine);
+        // Create the boundary lines for this segment
+        const boundaryMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthTest: false });
+        const leftLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(leftVerts), boundaryMaterial);
+        const rightLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(rightVerts), boundaryMaterial);
+        this.pathGroup.add(leftLine, rightLine);
     }
+}
 
     /**
      * Clear all lane geometry from the scene
@@ -2482,20 +2469,19 @@ getIdsBetween(start_id, end_id, adj) {
     }
 
 
-// MODIFIED: This function now returns the ID of the last point added.
+
 /**
  * Generates and saves a line of points between two coordinates, creating sequential edges.
- * @param {THREE.Vector3} start - The starting world coordinate.
- * @param {THREE.Vector3} end - The ending world coordinate.
- * @param {number|null} startDbId - The DB ID of an existing point to connect to.
- * @returns {Promise<number|null>} The database ID of the last point created.
  */
-async drawPoints(start, end, startDbId = null) {
+async drawPoints(start, end, startDbId = null, endDbId = null) {
     const direction = end.clone().sub(start);
     const distance = direction.length();
-    const step = 0.25; // 10cm interval
+    const step = 0.25;
     
-    if (distance < step) return startDbId; 
+    // This correctly allows creating a final connecting edge even if it's very short
+    if (distance < step && endDbId === null) {
+        return startDbId; 
+    }
 
     const numPoints = Math.floor(distance / step);
     const pointsToAdd = [];
@@ -2505,26 +2491,37 @@ async drawPoints(start, end, startDbId = null) {
         pointsToAdd.push(newPoint);
     }
     
-    if (pointsToAdd.length > 0) {
-        return await this.batchAddPoints(pointsToAdd, startDbId);
-    }
-    
-    return startDbId;
+    return await this.batchAddPoints(pointsToAdd, startDbId, endDbId);
 }
 
-// MODIFIED: This function now returns the ID of the last point added.
 /**
- * Batch adds multiple waypoints to the database and creates sequential edges between them.
- * @param {Array<THREE.Vector3>} points - Array of THREE.Vector3 points to add.
- * @param {number|null} startDbId - The DB ID of an existing point to connect the first new point to.
- * @returns {Promise<number|null>} The database ID of the last point created.
+ * Batch adds points and creates edges. Includes special handling for closing loops.
  */
-async batchAddPoints(points, startDbId = null) {
+async batchAddPoints(points, startDbId = null, endDbId = null) {
     if (!this.db) {
         this.db = new this.SQL.Database();
         this.db.run(WAYPOINT_TABLE_SQL);
         this.db.run(EDGE_GRAPH_TABLE_SQL);
     }
+
+    // --- CRITICAL FIX ---
+    // Handles closing a loop when the final segment is too short to add new points.
+    // Its only job is to create the single, final edge.
+    if (points.length === 0 && startDbId && endDbId) {
+         try {
+            const startRes = this.db.exec(`SELECT x, y, z FROM waypoints WHERE id = ${startDbId}`);
+            const endRes = this.db.exec(`SELECT x, y, z FROM waypoints WHERE id = ${endDbId}`);
+            if (startRes.length > 0 && endRes.length > 0) {
+                const startPos = { x: startRes[0].values[0][0], y: startRes[0].values[0][1], z: startRes[0].values[0][2] };
+                const endPos = { x: endRes[0].values[0][0], y: endRes[0].values[0][1], z: endRes[0].values[0][2] };
+                const weight = Math.sqrt(Math.pow(endPos.x - startPos.x, 2) + Math.pow(endPos.y - startPos.y, 2) + Math.pow(endPos.z - startPos.z, 2));
+                this.db.run("INSERT INTO edge_graph (id1, id2, weight) VALUES (?, ?, ?)", [startDbId, endDbId, weight]);
+                await this.refreshWaypointsFromDB();
+            }
+        } catch(e) { console.error("Failed to create closing edge:", e); }
+        return endDbId;
+    }
+    
     if (points.length === 0) return startDbId;
 
     let lastPointId = startDbId;
@@ -2532,7 +2529,6 @@ async batchAddPoints(points, startDbId = null) {
         this.db.run("BEGIN TRANSACTION");
         const waypointStmt = this.db.prepare("INSERT INTO waypoints (x, y, z) VALUES (?, ?, ?)");
         const edgeStmt = this.db.prepare("INSERT INTO edge_graph (id1, id2, weight) VALUES (?, ?, ?)");
-
         let lastPointRosPos = null;
 
         if (startDbId !== null) {
@@ -2543,24 +2539,24 @@ async batchAddPoints(points, startDbId = null) {
         }
 
         for (const point of points) {
-            const threePos = point.clone().add(this.mapOffset);
-            threePos.z = 0; // Force Z-coordinate to 0 for 2D points
-
-            const rosPos = this.threeToRos(threePos);
+            const rosPos = this.threeToRos(point.clone().add(this.mapOffset));
             waypointStmt.run([rosPos.x, rosPos.y, rosPos.z]);
-
             const newPointId = this.db.exec("SELECT last_insert_rowid()")[0].values[0][0];
-
             if (lastPointId !== null && lastPointRosPos !== null) {
-                const dx = rosPos.x - lastPointRosPos.x;
-                const dy = rosPos.y - lastPointRosPos.y;
-                const dz = rosPos.z - lastPointRosPos.z;
-                const weight = Math.sqrt(dx*dx + dy*dy + dz*dz);
+                const weight = Math.sqrt(Math.pow(rosPos.x - lastPointRosPos.x, 2) + Math.pow(rosPos.y - lastPointRosPos.y, 2) + Math.pow(rosPos.z - lastPointRosPos.z, 2));
                 edgeStmt.run([lastPointId, newPointId, weight]);
             }
-
             lastPointId = newPointId;
             lastPointRosPos = rosPos;
+        }
+        
+        if (endDbId !== null && lastPointId !== null) {
+            const res = this.db.exec(`SELECT x, y, z FROM waypoints WHERE id = ${endDbId}`);
+            if (res.length > 0 && res[0].values.length > 0) {
+                const endPointRosPos = { x: res[0].values[0][0], y: res[0].values[0][1], z: res[0].values[0][2] };
+                const weight = Math.sqrt(Math.pow(endPointRosPos.x - lastPointRosPos.x, 2) + Math.pow(endPointRosPos.y - lastPointRosPos.y, 2) + Math.pow(endPointRosPos.z - lastPointRosPos.z, 2));
+                edgeStmt.run([lastPointId, endDbId, weight]);
+            }
         }
 
         waypointStmt.free();
@@ -2571,9 +2567,18 @@ async batchAddPoints(points, startDbId = null) {
         this.db.run("ROLLBACK");
     } finally {
         await this.refreshWaypointsFromDB();
-        return lastPointId; // Return the ID of the final point
+        // The final return value must be the ID of the last point in the chain
+        if (endDbId !== null) {
+             return endDbId;
+        }
+        return lastPointId;
     }
 }
+
+
+
+
+
 
 
     // ====================================================================
@@ -2724,28 +2729,78 @@ async batchAddPoints(points, startDbId = null) {
      * Handle pointer down events for interaction initiation
      * * @param {PointerEvent} event - Pointer down event
      */
-    async onPointerDown(event) { // MODIFIED: Made async to handle DB operations
-        if (!this.camera) return;
+    async onPointerDown(event) {
+    if (!this.camera) return;
 
+    // This block handles only the "Persistent Drawing" mode and should be at the top.
+    if (this.isPersistentDrawing) {
         const coords = this.getPointerCoordinates(event);
         this.pointer.copy(coords);
         this.raycaster.setFromCamera(this.pointer, this.camera);
-        this.transformStartPos.set(event.clientX, event.clientY);
 
-        // MODIFIED: Reworked waypoint editing logic
-        if (this.activeTab === 'waypoint-edit') {
-            if (this.isPersistentDrawing) {
-                // Logic for the new click-by-click drawing tool
-                let intersectionPoint;
-                const clickedIndex = this.findClosestPoint(event);
+        let intersectionPoint;
+        let targetDbId = null;
 
-                if (clickedIndex !== -1) {
-                    // Snap to an existing point
-                    const positions = this.waypointsObject.geometry.attributes.position;
-                    intersectionPoint = new THREE.Vector3().fromBufferAttribute(positions, clickedIndex);
-                    this.drawPointsStartDbId = this.indexToDbId[clickedIndex];
-                } else {
-                    // Find a point on the map surface
+        // Check if the user clicked on an existing point
+        const clickedIndex = this.findClosestPoint(event);
+        if (clickedIndex !== -1) {
+            // If so, use that point's data
+            const positions = this.waypointsObject.geometry.attributes.position;
+            intersectionPoint = new THREE.Vector3().fromBufferAttribute(positions, clickedIndex);
+            targetDbId = this.indexToDbId[clickedIndex];
+        } else {
+            // Otherwise, find the intersection on the map or a virtual plane
+            const mapIntersects = this.mapObject ? this.raycaster.intersectObject(this.mapObject) : [];
+            if (mapIntersects.length > 0) {
+                intersectionPoint = mapIntersects[0].point;
+            } else {
+                const planeIntersect = new THREE.Vector3();
+                if (this.raycaster.ray.intersectPlane(this.raycastPlane, planeIntersect)) {
+                    intersectionPoint = planeIntersect;
+                }
+            }
+        }
+        
+        if (!intersectionPoint) return; // Exit if no valid click location is found
+
+        if (!this.isDrawingPoints) {
+            // This is the VERY FIRST click of a new drawing session
+            this.drawPointsStartPoint.copy(intersectionPoint);
+            if (clickedIndex !== -1) {
+               this.drawPointsStartDbId = targetDbId;
+            } else {
+               // Create the first point if the click is in empty space
+               const firstId = await this.batchAddPoints([intersectionPoint], null);
+               this.drawPointsStartDbId = firstId;
+            }
+            this.isDrawingPoints = true;
+        } else {
+            // This is for all subsequent clicks in a drawing session
+            const lastAddedId = await this.drawPoints(this.drawPointsStartPoint, intersectionPoint, this.drawPointsStartDbId, targetDbId);
+            
+            // --- STATE MANAGEMENT FIX ---
+            // The new "start point" for the next segment is always the point we just clicked on.
+            this.drawPointsStartPoint.copy(intersectionPoint);
+            // The new "start ID" is the ID of the point we clicked on (targetDbId) if it exists,
+            // otherwise it's the ID of the last new point we created (lastAddedId).
+            this.drawPointsStartDbId = targetDbId !== null ? targetDbId : lastAddedId;
+        }
+        return; // End the function here for persistent drawing mode
+    }
+
+    // --- The rest of the logic for other tools and tabs follows here ---
+
+    this.transformStartPos.set(event.clientX, event.clientY);
+
+    if (this.activeTab === 'waypoint-edit') {
+        // NOTE: The redundant 'isPersistentDrawing' block has been removed from here.
+        const clickedIndex = this.findClosestPoint(event);
+        this.raycaster.params.Points.threshold = this.dynamicPointSize;
+
+        switch (this.activeTool) {
+            case 'add-points':
+                {
+                    let intersectionPoint;
                     const mapIntersects = this.mapObject ? this.raycaster.intersectObject(this.mapObject) : [];
                     if (mapIntersects.length > 0) {
                         intersectionPoint = mapIntersects[0].point;
@@ -2755,166 +2810,125 @@ async batchAddPoints(points, startDbId = null) {
                             intersectionPoint = planeIntersect;
                         }
                     }
+                    if (intersectionPoint) this.addPoint(intersectionPoint);
                 }
-                
-                if (!intersectionPoint) return;
-
-                if (!this.isDrawingPoints) {
-                    // This is the FIRST click, which starts the line.
-                    this.drawPointsStartPoint.copy(intersectionPoint);
-                    if (clickedIndex === -1) {
-                       // If we didn't click an existing point, we need to create the first point.
-                       const lastId = await this.drawPoints(intersectionPoint, intersectionPoint, null);
-                       this.drawPointsStartDbId = lastId;
-                    }
-                    this.isDrawingPoints = true;
-                } else {
-                    // This is a SUBSEQUENT click, which adds a segment.
-                    const lastAddedId = await this.drawPoints(this.drawPointsStartPoint, intersectionPoint, this.drawPointsStartDbId);
-                    
-                    // The new start point is the point we just clicked.
-                    this.drawPointsStartPoint.copy(intersectionPoint);
-                    this.drawPointsStartDbId = lastAddedId;
-                }
-                return; // End here for this tool
-            }
-
-            // --- Logic for other waypoint tools ---
-            const clickedIndex = this.findClosestPoint(event);
-            this.raycaster.params.Points.threshold = this.dynamicPointSize;
-
-            switch (this.activeTool) {
-                case 'add-points':
-                    {
-                        let intersectionPoint;
-                        const mapIntersects = this.mapObject ? this.raycaster.intersectObject(this.mapObject) : [];
-                        if (mapIntersects.length > 0) {
-                            intersectionPoint = mapIntersects[0].point;
-                        } else {
-                            const planeIntersect = new THREE.Vector3();
-                            if (this.raycaster.ray.intersectPlane(this.raycastPlane, planeIntersect)) {
-                                intersectionPoint = planeIntersect;
-                            }
-                        }
-                        if (intersectionPoint) this.addPoint(intersectionPoint);
-                    }
-                    break;
-                case 'remove-points':
-                case 'move-points':
-                    this.handleMovePointerDown(clickedIndex, event);
-                    break;
-                case 'interpolate':
-                    if (clickedIndex !== -1) {
-                        if (this.pathSelectionStartIndex === null) {
-                            document.getElementById('interpolation-panel').classList.remove('hidden');
-                            this.clearSelection();
-                            this.pathSelectionStartIndex = clickedIndex;
-                            this.selectedIndices.add(clickedIndex);
-                        } else {
-                            const start = Math.min(this.pathSelectionStartIndex, clickedIndex);
-                            const end = Math.max(this.pathSelectionStartIndex, clickedIndex);
-                            for (let i = start; i <= end; i++) this.selectedIndices.add(i);
-                            this.pathSelectionStartIndex = null;
-                        }
-                        this.updateAllColors();
-                        this.updateInterpolationPanel();
-                    } else {
+                break;
+            case 'remove-points':
+            case 'move-points':
+                this.handleSelectionPointerDown(clickedIndex, event);
+                break;
+            case 'interpolate':
+                if (clickedIndex !== -1) {
+                    if (this.pathSelectionStartIndex === null) {
+                        document.getElementById('interpolation-panel').classList.remove('hidden');
                         this.clearSelection();
-                    }
-                    break;
-                case 'two-way':
-                     if (clickedIndex !== -1) {
-                        if (this.pathSelectionStartIndex === null) {
-                            document.getElementById('two-way-panel').classList.remove('hidden');
-                            this.clearSelection();
-                            this.pathSelectionStartIndex = clickedIndex;
-                            this.selectedIndices.add(clickedIndex);
-                        } else {
-                            const start = Math.min(this.pathSelectionStartIndex, clickedIndex);
-                            const end = Math.max(this.pathSelectionStartIndex, clickedIndex);
-                            for (let i = start; i <= end; i++) this.selectedIndices.add(i);
-                            this.pathSelectionStartIndex = null;
-                        }
-                        this.updateAllColors();
-                        this.updateTwoWayPanel();
+                        this.pathSelectionStartIndex = clickedIndex;
+                        this.selectedIndices.add(clickedIndex);
                     } else {
-                        this.clearSelection();
+                        const start = Math.min(this.pathSelectionStartIndex, clickedIndex);
+                        const end = Math.max(this.pathSelectionStartIndex, clickedIndex);
+                        for (let i = start; i <= end; i++) this.selectedIndices.add(i);
+                        this.pathSelectionStartIndex = null;
                     }
-                    break;
-            }
-        } else if (this.activeTab === 'lane-edit') {
-             const clickedIndex = this.findClosestPoint(event);
-             if (clickedIndex !== -1) {
-                if (this.laneEditSelection.length < 2 && !this.laneEditSelection.includes(clickedIndex)) {
-                    this.laneEditSelection.push(clickedIndex);
+                    this.updateAllColors();
+                    this.updateInterpolationPanel();
                 } else {
-                    this.laneEditSelection = [clickedIndex];
+                    this.clearSelection();
                 }
-                this.updateLaneEditInfo();
-            }
-        } else if (this.activeTab === 'layout-drawings') {
-            // Layout drawings interaction logic (unchanged)
-            const handleIntersects = this.raycaster.intersectObjects(this.resizeHandles);
-            const shapeIntersects = this.raycaster.intersectObjects(this.shapes);
-
-            if (handleIntersects.length > 0) {
-                const handle = handleIntersects[0].object;
-                this.isResizingShape = true;
-                this.activeHandle = handle;
-                this.controls.enabled = false;
-                
-                const shape = handle.userData.parentShape;
-                const planeIntersect = new THREE.Vector3();
-                this.raycaster.ray.intersectPlane(this.raycastPlane, planeIntersect);
-                
-                this.shapeStartTransform = {
-                    position: shape.position.clone(),
-                    scale: shape.scale.clone(),
-                    startDragPoint: planeIntersect.clone(),
-                    initialSize: new THREE.Box3().setFromObject(shape).getSize(new THREE.Vector3())
-                };
-                return;
-            }
-
-            if (shapeIntersects.length > 0) {
-                const shape = shapeIntersects[0].object;
-                this.selectShape(shape);
-                this.isMovingShape = true;
-                this.controls.enabled = false;
-                
-                const planeIntersect = new THREE.Vector3();
-                this.raycaster.ray.intersectPlane(this.raycastPlane, planeIntersect);
-
-                this.shapeStartTransform = {
-                    position: shape.position.clone(),
-                    offset: shape.position.clone().sub(planeIntersect)
-                };
-                return;
-            }
-
-            if (['square', 'oval', 'arrow', 'line'].includes(this.activeTool)) {
-                const point = new THREE.Vector3();
-                if (this.raycaster.ray.intersectPlane(this.raycastPlane, point)) {
-                    this.drawStartPoint.copy(point);
-                    this.isDrawing = true;
-                    this.controls.enabled = false;
+                break;
+            case 'two-way':
+                 if (clickedIndex !== -1) {
+                    if (this.pathSelectionStartIndex === null) {
+                        document.getElementById('two-way-panel').classList.remove('hidden');
+                        this.clearSelection();
+                        this.pathSelectionStartIndex = clickedIndex;
+                        this.selectedIndices.add(clickedIndex);
+                    } else {
+                        const start = Math.min(this.pathSelectionStartIndex, clickedIndex);
+                        const end = Math.max(this.pathSelectionStartIndex, clickedIndex);
+                        for (let i = start; i <= end; i++) this.selectedIndices.add(i);
+                        this.pathSelectionStartIndex = null;
+                    }
+                    this.updateAllColors();
+                    this.updateTwoWayPanel();
+                } else {
+                    this.clearSelection();
                 }
-                return;
-            }
-             
-            if (this.activeTool === 'insert-text') {
-                const point = new THREE.Vector3();
-                if (this.raycaster.ray.intersectPlane(this.raycastPlane, point)) {
-                    this.textInsertionPoint = point;
-                    this.showTextInputModal();
-                }
-                this.selectTool(null);
-                return;
-            }
-
-            this.clearShapeSelection();
+                break;
         }
+    } else if (this.activeTab === 'lane-edit') {
+         const clickedIndex = this.findClosestPoint(event);
+         if (clickedIndex !== -1) {
+            if (this.laneEditSelection.length < 2 && !this.laneEditSelection.includes(clickedIndex)) {
+                this.laneEditSelection.push(clickedIndex);
+            } else {
+                this.laneEditSelection = [clickedIndex];
+            }
+            this.updateLaneEditInfo();
+        }
+    } else if (this.activeTab === 'layout-drawings') {
+        // Layout drawings interaction logic (unchanged)
+        const handleIntersects = this.raycaster.intersectObjects(this.resizeHandles);
+        const shapeIntersects = this.raycaster.intersectObjects(this.shapes);
+
+        if (handleIntersects.length > 0) {
+            const handle = handleIntersects[0].object;
+            this.isResizingShape = true;
+            this.activeHandle = handle;
+            this.controls.enabled = false;
+            
+            const shape = handle.userData.parentShape;
+            const planeIntersect = new THREE.Vector3();
+            this.raycaster.ray.intersectPlane(this.raycastPlane, planeIntersect);
+            
+            this.shapeStartTransform = {
+                position: shape.position.clone(),
+                scale: shape.scale.clone(),
+                startDragPoint: planeIntersect.clone(),
+                initialSize: new THREE.Box3().setFromObject(shape).getSize(new THREE.Vector3())
+            };
+            return;
+        }
+
+        if (shapeIntersects.length > 0) {
+            const shape = shapeIntersects[0].object;
+            this.selectShape(shape);
+            this.isMovingShape = true;
+            this.controls.enabled = false;
+            
+            const planeIntersect = new THREE.Vector3();
+            this.raycaster.ray.intersectPlane(this.raycastPlane, planeIntersect);
+
+            this.shapeStartTransform = {
+                position: shape.position.clone(),
+                offset: shape.position.clone().sub(planeIntersect)
+            };
+            return;
+        }
+
+        if (['square', 'oval', 'arrow', 'line'].includes(this.activeTool)) {
+            const point = new THREE.Vector3();
+            if (this.raycaster.ray.intersectPlane(this.raycastPlane, point)) {
+                this.drawStartPoint.copy(point);
+                this.isDrawing = true;
+                this.controls.enabled = false;
+            }
+            return;
+        }
+         
+        if (this.activeTool === 'insert-text') {
+            const point = new THREE.Vector3();
+            if (this.raycaster.ray.intersectPlane(this.raycastPlane, point)) {
+                this.textInsertionPoint = point;
+                this.showTextInputModal();
+            }
+            this.selectTool(null);
+            return;
+        }
+
+        this.clearShapeSelection();
     }
+}
 
     /**
      * Handle pointer move events for drag operations and hover feedback
