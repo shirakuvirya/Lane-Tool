@@ -1394,6 +1394,7 @@ findPathsToNearestJunctions(junctionId, adj) {
         simpleAdj.get(id2).push(id1);
     }
     stmt.free();
+    
 
     // Step 2: Build the list of edges to skip.
     const edgesToSkip = new Set();
