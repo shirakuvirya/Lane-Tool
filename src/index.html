@@ -115,13 +115,7 @@
                     Generate Turns
                 </button>
         </div>
-            <!-- <div class="actions">
-                <button id="delete-lane" class="action-btn action-del-lane" 
-                        title="Remove all generated lane boundaries">
-                    🗑️ Delete Generated Lane
-                </button>
-            </div> -->
-        <div id="two-way-panel" class="tool-section hidden">
+            <div id="two-way-panel" class="tool-section hidden">
             <h4>Two-Way Path</h4>
             <p id="two-way-info" class="panel-hint">Select a start and end point to define a path.</p>
             <div class="actions">
@@ -360,6 +354,15 @@
                             <span id="shape-opacity-value">0.70</span>
                         </div>
                     </div>
+                    <div class="panel-control" style="margin-top: 15px;">
+                        <label for="shape-rotation-value">Rotation (deg):</label>
+                        <div class="stepper-input">
+                            <button id="rotate-ccw-btn" title="Rotate Counter-Clockwise (-1°)">↺</button>
+                            <input type="text" id="shape-rotation-value" value="0.0" readonly 
+                                   style="width: 60px; text-align: center; border-left: 1px solid #4a5568; border-right: 1px solid #4a5568;">
+                            <button id="rotate-cw-btn" title="Rotate Clockwise (+1°)">↻</button>
+                        </div>
+                    </div>
                 </div>
                 
                 <div id="text-style-controls" class="color-palette hidden">
@@ -385,7 +388,7 @@
         <div class="panel-header">
             <h3>Layout Information</h3>
         </div>
-        </div>
+    </div>
 
     <div id="hover-coords" title="Real-time world coordinates under cursor"></div>
 
@@ -447,6 +450,22 @@
                 </button>
                 <button id="text-input-confirm" class="action-btn success" 
                         title="Confirm text input and create/update label">
+                    Confirm
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="delete-confirm" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h3 id="modal-title">ARE YOU SURE!!!</h3>
+            <div class="modal-actions">
+                <button id="delete-confirm-cancel" class="action-btn action-del-lane" 
+                        title="Cancel deletion">
+                    Cancel
+                </button>
+                <button id="confirm-deletion" class="action-btn success" 
+                        title="Confirm Deletion">
                     Confirm
                 </button>
             </div>

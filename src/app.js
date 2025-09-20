@@ -161,6 +161,12 @@ class ViryaOSLaneStudio {
         
         /** @type {boolean} Flag for active shape resizing operation */
         this.isResizingShape = false;
+
+        /** @type {boolean} Flag for active shape rotation operation */
+        this.isRotatingShape = false;
+
+        /** @type {THREE.Mesh} Rotation handle object for the selected shape */
+        this.rotateHandle = null;
         
         /** @type {Array<THREE.Mesh>} Resize handle objects for selected shapes */
         this.resizeHandles = [];
@@ -591,7 +597,7 @@ class ViryaOSLaneStudio {
         const mesh = new THREE.Mesh(geometry, material);
         const centerX = (startPos.x + endPos.x) / 2;
         const centerY = (startPos.y + endPos.y) / 2;
-        mesh.position.set(centerX, centerY, 0.0);
+        mesh.position.set(centerX, centerY, -0.001);
 
         // Special handling for line rotation
         if (type === 'line') {
@@ -633,6 +639,31 @@ class ViryaOSLaneStudio {
     // ====================================================================
 
     /**
+     * Rotates the currently selected shape by a given number of degrees.
+     * @param {number} degrees - The number of degrees to rotate by (positive for CW, negative for CCW).
+     */
+    rotateSelectedShape(degrees) {
+        if (!this.selectedShape) return;
+
+        // Convert degrees to radians and add to the shape's z-axis rotation
+        const radians = degrees * (Math.PI / 180);
+        this.selectedShape.rotation.z += radians;
+
+        if (this.selectedShape.selectionOutline) {
+            this.selectedShape.selectionOutline.rotation.copy(this.selectedShape.rotation);
+        }
+
+        this.updateResizeHandlePositions(this.selectedShape);
+
+        // Update the UI display with the new rotation value
+        const rotationInput = document.getElementById('shape-rotation-value');
+        if (rotationInput) {
+            const currentDegrees = (this.selectedShape.rotation.z * 180 / Math.PI);
+            rotationInput.value = currentDegrees.toFixed(1);
+        }
+    }
+
+    /**
      * Select a shape for editing operations
      * * @param {THREE.Mesh} shape - Shape to select
      */
@@ -666,10 +697,31 @@ class ViryaOSLaneStudio {
      * * @param {THREE.Mesh} shape - Shape to outline
      */
     addSelectionOutline(shape) {
-        if (shape.selectionOutline) return;
-        const outline = new THREE.BoxHelper(shape, 0x4a9eff);
+         if (shape.selectionOutline) return;
+
+        // 1. Create a box geometry that matches the shape's original unscaled size.
+        // We get the size from the shape's geometry's bounding box.
+        shape.geometry.computeBoundingBox();
+        const size = shape.geometry.boundingBox.getSize(new THREE.Vector3());
+        const outlineGeometry = new THREE.BoxGeometry(size.x, size.y, size.z);
+
+        // 2. Use EdgesGeometry to get only the lines of the box.
+        const edges = new THREE.EdgesGeometry(outlineGeometry);
+
+        // 3. Create a line material and the final LineSegments object.
+        const outlineMaterial = new THREE.LineBasicMaterial({ color: 0x4a9eff, depthTest: false });
+        const outline = new THREE.LineSegments(edges, outlineMaterial);
+
+        // 4. Match the outline's transform (position, rotation, scale) to the shape's transform.
+        // This is the key part that makes it an Oriented Bounding Box (OBB).
+        outline.position.copy(shape.position);
+        outline.rotation.copy(shape.rotation);
+        outline.scale.copy(shape.scale);
+        
+        // 5. Store the outline and add it to the scene.
         shape.selectionOutline = outline;
         this.shapeGroup.add(outline);
+
     }
     
     /**
@@ -685,31 +737,39 @@ class ViryaOSLaneStudio {
         }
     }
 
+    // REPLACE the entire createResizeHandles method with this new version.
+
     /**
-     * Create resize handles for the selected shape
+     * Create resize handles for the selected shape at its actual transformed corners.
      * * @param {THREE.Mesh} shape - Shape to create handles for
      */
     createResizeHandles(shape) {
         this.clearResizeHandles();
-        const box = new THREE.Box3().setFromObject(shape);
-        const size = box.getSize(new THREE.Vector3());
-        const center = box.getCenter(new THREE.Vector3());
+        shape.updateMatrixWorld(); // Ensure the shape's world matrix is up-to-date
+
+        // Get the original, unscaled size of the shape's geometry
+        shape.geometry.computeBoundingBox();
+        const size = shape.geometry.boundingBox.getSize(new THREE.Vector3());
         
         const handleSize = this.dynamicPointSize * 2;
         const handleGeometry = new THREE.BoxGeometry(handleSize, handleSize, handleSize);
-        const handleMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        const handleMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false });
 
-        // Create 4 corner handles
-        const handlePositions = [
-            new THREE.Vector3(center.x - size.x / 2, center.y - size.y / 2, 0),
-            new THREE.Vector3(center.x + size.x / 2, center.y - size.y / 2, 0),
-            new THREE.Vector3(center.x + size.x / 2, center.y + size.y / 2, 0),
-            new THREE.Vector3(center.x - size.x / 2, center.y + size.y / 2, 0),
+        // Define the 4 corner positions in the shape's LOCAL space (before transformation)
+        const localHandlePositions = [
+            new THREE.Vector3(-size.x / 2, -size.y / 2, 0), // Bottom-left
+            new THREE.Vector3( size.x / 2, -size.y / 2, 0), // Bottom-right
+            new THREE.Vector3( size.x / 2,  size.y / 2, 0), // Top-right
+            new THREE.Vector3(-size.x / 2,  size.y / 2, 0)  // Top-left
         ];
 
-        handlePositions.forEach((pos, index) => {
+        localHandlePositions.forEach((pos, index) => {
             const handle = new THREE.Mesh(handleGeometry.clone(), handleMaterial.clone());
-            handle.position.copy(pos);
+            
+            // Transform the local corner position to its world position
+            const worldPos = pos.clone().applyMatrix4(shape.matrixWorld);
+            handle.position.copy(worldPos);
+            
             handle.userData = {
                 type: 'resizeHandle',
                 handleIndex: index,
@@ -719,28 +779,37 @@ class ViryaOSLaneStudio {
             this.shapeGroup.add(handle);
         });
     }
-    
+
+// REPLACE the entire updateResizeHandlePositions method with this new version.
+
     /**
-     * Update resize handle positions after shape transformation
+     * Update resize handle positions after shape transformation by transforming local corners to world space.
      * * @param {THREE.Mesh} shape - Shape whose handles need updating
      */
     updateResizeHandlePositions(shape) {
         if (this.resizeHandles.length === 0) return;
-        const box = new THREE.Box3().setFromObject(shape);
-        const size = box.getSize(new THREE.Vector3());
-        const center = box.getCenter(new THREE.Vector3());
+        shape.updateMatrixWorld(); // Ensure the shape's world matrix is up-to-date
+
+        // Get the original, unscaled size of the shape's geometry
+        shape.geometry.computeBoundingBox();
+        const size = shape.geometry.boundingBox.getSize(new THREE.Vector3());
         
-        const handlePositions = [
-             new THREE.Vector3(center.x - size.x / 2, center.y - size.y / 2, 0),
-             new THREE.Vector3(center.x + size.x / 2, center.y - size.y / 2, 0),
-             new THREE.Vector3(center.x + size.x / 2, center.y + size.y / 2, 0),
-             new THREE.Vector3(center.x - size.x / 2, center.y + size.y / 2, 0),
+        // Define the 4 corner positions in the shape's LOCAL space
+        const localHandlePositions = [
+            new THREE.Vector3(-size.x / 2, -size.y / 2, 0), // Bottom-left
+            new THREE.Vector3( size.x / 2, -size.y / 2, 0), // Bottom-right
+            new THREE.Vector3( size.x / 2,  size.y / 2, 0), // Top-right
+            new THREE.Vector3(-size.x / 2,  size.y / 2, 0)  // Top-left
         ];
 
+        // Loop through the handles and update their positions
         this.resizeHandles.forEach((handle, index) => {
-             handle.position.copy(handlePositions[index]);
+            // Transform the local corner point to its new world position and update the handle
+            const worldPos = localHandlePositions[index].clone().applyMatrix4(shape.matrixWorld);
+            handle.position.copy(worldPos);
         });
     }
+    
 
     /**
      * Remove all resize handles from the scene
@@ -779,6 +848,11 @@ class ViryaOSLaneStudio {
             opacitySlider.value = shape.material.opacity;
             document.getElementById('shape-opacity-value').textContent = shape.material.opacity.toFixed(2);
             document.getElementById('layout-edit-text').classList.add('hidden');
+            const rotationInput = document.getElementById('shape-rotation-value');
+            if (rotationInput) {
+                const currentDegrees = (shape.rotation.z * 180 / Math.PI);
+                rotationInput.value = currentDegrees.toFixed(1);
+            }
         }
     }
 
@@ -814,6 +888,19 @@ class ViryaOSLaneStudio {
         this.textInsertionPoint = null;
         this.isEditingText = false;
     }
+
+
+    confirmDelete(){
+        this.deleteSelectedPoints();
+        const modal = document.getElementById('delete-confirm');
+        modal.classList.add('hidden');
+    }
+
+    cancelDelete(){
+        const modal = document.getElementById('delete-confirm');
+        modal.classList.add('hidden');
+    }
+    
 
     
 
@@ -1293,14 +1380,7 @@ getIdsBetween(start_id, end_id, adj) {
     }
 
 
-    /**
- * Finds all edges on paths from a junction to its nearest neighboring junctions.
- * Uses BFS and stops each path when it hits another junction (node with >2 edges).
- *
- * @param {number} junctionId - The ID of the junction to start the search from.
- * @param {Map<number, Array<number>>} adj - The adjacency list of the graph.
- * @returns {Set<string>} A Set containing all the edge keys (e.g., "1-2") found.
- */
+   
 /**
  * From a given junction, finds paths to its nearest neighboring junctions.
  * Each path is the sequence of edges between the start junction
@@ -1326,12 +1406,13 @@ findPathsToNearestJunctions(junctionId, adj) {
         pathEdges.push(
             prev < curr ? `${prev}-${curr}` : `${curr}-${prev}`
         );
+        let count =0;
 
         while (true) {
             const neighbors = adj.get(curr);
 
             // If this node is a junction (degree > 2), stop here
-            if (neighbors.length > 2) {
+            if (neighbors.length > 2 || count >5) {
                 paths.push(pathEdges);
                 break;
             }
@@ -1351,124 +1432,129 @@ findPathsToNearestJunctions(junctionId, adj) {
 
             prev = curr;
             curr = next;
+            count = count +1;
         }
     }
 
     return paths;
 }
-
-
-
+    
+    createLane(edges){
+        let c=0;
+        for (const edge of edges) {
+            console.log("Edge:", edge);
+            c=c+1;
+        }
+    }
 
     /**
-        * Generates lane geometry, skipping only the direct path segments between an
-        * entry and exit point of a junction turn.
-        * @async
-        */
-       async drawLane() {
-    this.clearLane();
-    if (!this.db) return;
+    * Generates lane geometry, skipping only the direct path segments between an
+    * entry and exit point of a junction turn.
+    * @async
+    */
+    async drawLane() {
+        this.clearLane();
+        if (!this.db) return;
 
-    // Step 1: Load graph data and build adjacency list.
-    const dbIdToWaypointMap = new Map();
-    const simpleAdj = new Map();
-    let stmt = this.db.prepare("SELECT id, x, y, z, width_left, width_right FROM waypoints");
-    while (stmt.step()) {
-        const row = stmt.getAsObject();
-        dbIdToWaypointMap.set(row.id, {
-            ...row,
-            pos: this.rosToThree({ x: row.x, y: row.y, z: row.z }).sub(this.mapOffset)
-        });
-        simpleAdj.set(row.id, []);
-    }
-    stmt.free();
+        // Step 1: Load graph data and build adjacency list.
+        const dbIdToWaypointMap = new Map();
+        const simpleAdj = new Map();
+        let stmt = this.db.prepare("SELECT id, x, y, z, width_left, width_right FROM waypoints");
+        while (stmt.step()) {
+            const row = stmt.getAsObject();
+            dbIdToWaypointMap.set(row.id, {
+                ...row,
+                pos: this.rosToThree({ x: row.x, y: row.y, z: row.z }).sub(this.mapOffset)
+            });
+            simpleAdj.set(row.id, []);
+        }
+        stmt.free();
 
-    if (dbIdToWaypointMap.size < 2) return;
+        if (dbIdToWaypointMap.size < 2) return;
 
-    stmt = this.db.prepare("SELECT id1, id2 FROM edge_graph");
-    const edges = [];
-    while (stmt.step()) {
-        const [id1, id2] = stmt.get();
-        edges.push({ id1, id2 });
-        simpleAdj.get(id1).push(id2);
-        simpleAdj.get(id2).push(id1);
-    }
-    stmt.free();
-    
+        stmt = this.db.prepare("SELECT id1, id2 FROM edge_graph");
+        const edges = [];
+        while (stmt.step()) {
+            const [id1, id2] = stmt.get();
+            edges.push({ id1, id2 });
+            simpleAdj.get(id1).push(id2);
+            simpleAdj.get(id2).push(id1);
+        }
+        stmt.free();
+        
 
-    // Step 2: Build the list of edges to skip.
-    const edgesToSkip = new Set();
+        // Step 2: Build the list of edges to skip.
+        const edgesToSkip = new Set();
 
-    // Find all junctions in the graph.
-    for (const [j_id, neighbors] of simpleAdj.entries()) {
-        if (neighbors.length <= 2) continue; // not a junction
+        // Find all junctions in the graph.
+        for (const [j_id, neighbors] of simpleAdj.entries()) {
+            if (neighbors.length <= 2) continue; // not a junction
 
-        // Get all corridor paths from this junction to its nearest neighbor junctions.
-        const junctionPaths = this.findPathsToNearestJunctions(j_id, simpleAdj);
-
-        // Flatten the paths into the skip list.
-        for (const path of junctionPaths) {
-            for (const edgeKey of path) {
-                edgesToSkip.add(edgeKey);
+            // Get all corridor paths from this junction to its nearest neighbor junctions.
+            const junctionPaths = this.findPathsToNearestJunctions(j_id, simpleAdj);
+            
+            // Flatten the paths into the skip list.
+            for (const path of junctionPaths) {
+                for (const edgeKey of path) {
+                    edgesToSkip.add(edgeKey);
+                }
             }
         }
-    }
 
-    console.log("Edges to skip:", Array.from(edgesToSkip));
+        this.createLane(Array.from(edgesToSkip));
 
-    // Step 3: Iterate over every edge and draw a lane unless it's in our skip list.
-    for (const edge of edges) {
-        const edgeKey = edge.id1 < edge.id2 ? `${edge.id1}-${edge.id2}` : `${edge.id2}-${edge.id1}`;
-        if (edgesToSkip.has(edgeKey)) {
-            continue; // skip junction-to-junction corridor edges
-        }
-
-        const p1_data = dbIdToWaypointMap.get(edge.id1);
-        const p2_data = dbIdToWaypointMap.get(edge.id2);
-
-        if (!p1_data || !p2_data) continue;
-
-        const waypointsData = [p1_data, p2_data];
-        const leftVerts = [];
-        const rightVerts = [];
-
-        for (let i = 0; i < waypointsData.length; i++) {
-            const p_curr = waypointsData[i].pos;
-            const halfWidthLeft = (waypointsData[i].width_left || 0.5);
-            const halfWidthRight = (waypointsData[i].width_right || 0.5);
-            let normal;
-            if (i === 0) {
-                const dir_out = waypointsData[i + 1].pos.clone().sub(p_curr).normalize();
-                normal = new THREE.Vector3(-dir_out.y, dir_out.x, 0).normalize();
-            } else {
-                const dir_in = p_curr.clone().sub(waypointsData[i - 1].pos).normalize();
-                normal = new THREE.Vector3(-dir_in.y, dir_in.x, 0).normalize();
+        // Step 3: Iterate over every edge and draw a lane unless it's in our skip list.
+        for (const edge of edges) {
+            const edgeKey = edge.id1 < edge.id2 ? `${edge.id1}-${edge.id2}` : `${edge.id2}-${edge.id1}`;
+            if (edgesToSkip.has(edgeKey)) {
+                continue; // skip junction-to-junction corridor edges
             }
-            leftVerts.push(p_curr.clone().add(normal.clone().multiplyScalar(halfWidthLeft)));
-            rightVerts.push(p_curr.clone().sub(normal.clone().multiplyScalar(halfWidthRight)));
+
+            const p1_data = dbIdToWaypointMap.get(edge.id1);
+            const p2_data = dbIdToWaypointMap.get(edge.id2);
+
+            if (!p1_data || !p2_data) continue;
+
+            const waypointsData = [p1_data, p2_data];
+            const leftVerts = [];
+            const rightVerts = [];
+
+            for (let i = 0; i < waypointsData.length; i++) {
+                const p_curr = waypointsData[i].pos;
+                const halfWidthLeft = (waypointsData[i].width_left || 0.5);
+                const halfWidthRight = (waypointsData[i].width_right || 0.5);
+                let normal;
+                if (i === 0) {
+                    const dir_out = waypointsData[i + 1].pos.clone().sub(p_curr).normalize();
+                    normal = new THREE.Vector3(-dir_out.y, dir_out.x, 0).normalize();
+                } else {
+                    const dir_in = p_curr.clone().sub(waypointsData[i - 1].pos).normalize();
+                    normal = new THREE.Vector3(-dir_in.y, dir_in.x, 0).normalize();
+                }
+                leftVerts.push(p_curr.clone().add(normal.clone().multiplyScalar(halfWidthLeft)));
+                rightVerts.push(p_curr.clone().sub(normal.clone().multiplyScalar(halfWidthRight)));
+            }
+
+            const fillVertices = [
+                leftVerts[0].x, leftVerts[0].y, leftVerts[0].z,
+                rightVerts[0].x, rightVerts[0].y, rightVerts[0].z,
+                leftVerts[1].x, leftVerts[1].y, leftVerts[1].z,
+                rightVerts[1].x, rightVerts[1].y, rightVerts[1].z
+            ];
+            const indices = [0, 1, 2, 2, 1, 3];
+            const fillGeometry = new THREE.BufferGeometry();
+            fillGeometry.setAttribute('position', new THREE.Float32BufferAttribute(fillVertices, 3));
+            fillGeometry.setIndex(indices);
+            const fillMaterial = new THREE.MeshBasicMaterial({ color: 0x404040, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
+            const fillMesh = new THREE.Mesh(fillGeometry, fillMaterial);
+            this.pathGroup.add(fillMesh);
+
+            const boundaryMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthTest: false });
+            const leftLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(leftVerts), boundaryMaterial);
+            const rightLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(rightVerts), boundaryMaterial);
+            this.pathGroup.add(leftLine, rightLine);
         }
-
-        const fillVertices = [
-            leftVerts[0].x, leftVerts[0].y, leftVerts[0].z,
-            rightVerts[0].x, rightVerts[0].y, rightVerts[0].z,
-            leftVerts[1].x, leftVerts[1].y, leftVerts[1].z,
-            rightVerts[1].x, rightVerts[1].y, rightVerts[1].z
-        ];
-        const indices = [0, 1, 2, 2, 1, 3];
-        const fillGeometry = new THREE.BufferGeometry();
-        fillGeometry.setAttribute('position', new THREE.Float32BufferAttribute(fillVertices, 3));
-        fillGeometry.setIndex(indices);
-        const fillMaterial = new THREE.MeshBasicMaterial({ color: 0x404040, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
-        const fillMesh = new THREE.Mesh(fillGeometry, fillMaterial);
-        this.pathGroup.add(fillMesh);
-
-        const boundaryMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthTest: false });
-        const leftLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(leftVerts), boundaryMaterial);
-        const rightLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(rightVerts), boundaryMaterial);
-        this.pathGroup.add(leftLine, rightLine);
     }
-}
-
 
     /**
      * Clear all lane geometry from the scene
@@ -2140,12 +2226,21 @@ findPathsToNearestJunctions(junctionId, adj) {
      */
     async deleteSelectedPoints() {
         if (!this.db || this.selectedIndices.size === 0) return;
-
+        
         const idsToDelete = Array.from(this.selectedIndices).map(index => this.indexToDbId[index]);
+        console.log(`${idsToDelete}`);
         if (idsToDelete.length === 0) return;
 
         const placeholders = idsToDelete.map(() => '?').join(',');
-        this.db.run(`DELETE FROM waypoints WHERE id IN (${placeholders})`, idsToDelete);
+        try{
+            this.db.run(`DELETE FROM waypoints WHERE id IN (${placeholders})`, idsToDelete);
+            this.db.run(`DELETE FROM junction_points WHERE junction_waypoint_id IN (${placeholders})`, idsToDelete);
+            this.db.run(`DELETE FROM edge_graph WHERE id1 IN (${placeholders})`, idsToDelete);
+            this.db.run(`DELETE FROM edge_graph WHERE id2 IN (${placeholders})`, idsToDelete);
+        } catch(e){}
+
+
+
 
         this.clearSelection();
         await this.refreshWaypointsFromDB();
@@ -2810,6 +2905,8 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
 
 
 
+
+
     // ====================================================================
     // APPLICATION STATE MANAGEMENT
     // ====================================================================
@@ -3159,6 +3256,8 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
     }
 }
 
+    // REPLACE your entire onPointerMove function with this corrected version.
+
     /**
      * Handle pointer move events for drag operations and hover feedback
      * * @param {PointerEvent} event - Pointer move event
@@ -3211,7 +3310,12 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
 
         if (this.isMovingShape) {
             this.selectedShape.position.copy(currentPoint).add(this.shapeStartTransform.offset);
-            if (this.selectedShape.selectionOutline) this.selectedShape.selectionOutline.update();
+            
+            // CORRECTED: Manually sync outline position instead of calling .update()
+            if (this.selectedShape.selectionOutline) {
+                this.selectedShape.selectionOutline.position.copy(this.selectedShape.position);
+            }
+
             this.updateResizeHandlePositions(this.selectedShape);
             return;
         }
@@ -3241,8 +3345,13 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
             shape.position.copy(newCenter);
             if (originalSize.x > 0.01) shape.scale.x = (newWidth / originalSize.x) * this.shapeStartTransform.scale.x;
             if (originalSize.y > 0.01) shape.scale.y = (newHeight / originalSize.y) * this.shapeStartTransform.scale.y;
+            
+            // CORRECTED: Manually sync outline position and scale instead of calling .update()
+            if (shape.selectionOutline) {
+                shape.selectionOutline.position.copy(shape.position);
+                shape.selectionOutline.scale.copy(shape.scale);
+            }
 
-            if (shape.selectionOutline) shape.selectionOutline.update();
             this.updateResizeHandlePositions(shape);
             return;
         }
@@ -3299,7 +3408,6 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
             this.updateSelectionFromMarquee();
         }
     }
-
     /**
      * Handle pointer up events to finalize interactions
      * * @param {PointerEvent} event - Pointer up event
@@ -3387,7 +3495,7 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
             URL.revokeObjectURL(url);
     
             console.log('ðŸŽ‰ Database exported successfully!');
-            this.showErrorMessage("Database exported successfully!"); // Use error message as a notification
+            this.showErrorMessage("Database exported successfully!"); 
     
         } catch (error) {
             console.error('âŒ Failed to export database:', error);
@@ -3559,6 +3667,11 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
 
         document.getElementById('linear-interpolate').addEventListener('click', () => this.linearInterpolateSelected());
         document.getElementById('mark-two-way').addEventListener('click', () => this.markSelectedAsTwoWay());
+
+        //Delete confirmation
+        document.getElementById('confirm-deletion').addEventListener('click', () => this.confirmDelete());
+        document.getElementById('delete-confirm-cancel').addEventListener('click', () => this.cancelDelete());
+        
         
         // Radial interpolation controls
         const radialSlider = document.getElementById('radial-strength');
@@ -3667,6 +3780,15 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
             this.applyOpacityToSelectedShape();
             document.getElementById('shape-opacity-value').textContent = parseFloat(e.target.value).toFixed(2);
         });
+
+         document.getElementById('rotate-ccw-btn').addEventListener('click', () => {
+            this.rotateSelectedShape(-1); // Rotate -1 degree
+        });
+        document.getElementById('rotate-cw-btn').addEventListener('click', () => {
+            this.rotateSelectedShape(1); // Rotate +1 degree
+        });
+
+
         document.getElementById('text-color').addEventListener('input', (e) => {
             if (this.selectedShape && this.selectedShape.userData.type === 'text') {
                 this.selectedShape.material.color.set(e.target.value);
@@ -3734,7 +3856,7 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
                     break;
                 case 'delete':
                 case 'backspace':
-                    if (this.selectedIndices.size > 0) this.deleteSelectedPoints();
+                    if (this.selectedIndices.size > 0) {const modal = document.getElementById('delete-confirm');modal.classList.remove('hidden');}
                     if (this.selectedShape) this.deleteSelectedShape();
                     break;
             }
