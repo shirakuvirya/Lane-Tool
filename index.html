@@ -1,0 +1,472 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <title>ViryaOS Lane Studio - Advanced Lane Editing for Autonomous Vehicles</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Professional lane editing application for autonomous vehicle development by Virya Autonomous Technologies">
+    <meta name="author" content="Virya Autonomous Technologies Pvt Ltd">
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <link rel="stylesheet" href="main.css">
+</head>
+
+<body>
+    <div id="app" title="3D Point Cloud Visualization Viewport"></div>
+
+    <div id="selection-box" title="Selection Area Indicator"></div>
+
+    <div id="loader">Loading ViryaOS Lane Studio...</div>
+
+    <div id="top-tabs">
+        <div class="tab-nav">
+            <button id="tab-view" class="tab-button active" title="View and navigate point clouds">
+                <span class="tab-icon">📷</span>
+                View
+            </button>
+            <button id="tab-waypoint-edit" class="tab-button" title="Edit individual waypoints">
+                <span class="tab-icon">•—•</span>
+                Waypoint Edit
+            </button>
+            <button id="tab-lane-edit" class="tab-button" title="Generate and modify lane boundaries">
+                <span class="tab-icon">/┆\</span>
+                Lane Edit
+            </button>
+            <button id="tab-layout-drawings" class="tab-button" title="Add annotations and layout elements">
+                <span class="tab-icon">📐</span>
+                Layout Drawings
+            </button>
+        </div>
+        <div>
+             <h4>ViryaOS-Lane-Studio</h4>
+        </div>
+
+        <div id="file-control">
+            <label class="file-label" title="Load point cloud files (PCD/PLY format)">
+                📁 Load PCD/PLY
+                <input type="file" id="pcd-file" accept=".pcd,.ply" multiple>
+            </label>
+            <label class="file-label" title="Load waypoint database (SQLite format)">
+                🗄️ Load Database
+                <input type="file" id="db-file" accept=".db,.sqlite,.sqlite3">
+            </label>
+            <button id="export-db-btn" class="file-label" title="Generate graph and export database">
+                📊 Export DB & Graph
+            </button>
+        </div>
+    </div>
+
+    <div id="left-panel" class="side-panel hidden">
+        <div class="panel-header">
+            <h3>Waypoint Tools</h3>
+        </div>
+
+        <div class="tool-section">
+            <h4>Edit Tools</h4>
+            <div class="tool-grid">
+                <button id="tool-draw-points" class="tool-button" title="Draw a line of waypoints by dragging (W)">
+                    <span class="tool-icon">✏️</span>
+                    Draw Points
+                </button>
+                <button id="tool-remove-points" class="tool-button" title="Remove waypoints by clicking on them">
+                    <span class="tool-icon">🗑️</span>
+                    Remove Points
+                </button>
+                <button id="tool-move-points" class="tool-button" title="Select and drag waypoints to new positions">
+                    <span class="tool-icon">🔄</span>
+                    Move Points
+                </button>
+                <button id="tool-interpolate" class="tool-button" title="Create smooth paths between waypoints">
+                    <span class="tool-icon">📈</span>
+                    Interpolate
+                </button>
+                <button id="tool-two-way" class="tool-button-large" title="Mark a path of points as two-way">
+                    <span class="tool-icon">🔄</span>
+                    Two Way
+                </button>
+            </div>
+        </div>
+        <div class="turn-control">
+                <label for="vehicle-select-turn">Vehicle Type:</label>
+                <select id="vehicle-select-turn" title="Select vehicle type to determine lane width">
+                    <option value="1.65">AMR-10</option>
+                    <option value="1.6">ARM-50</option>
+                    <option value="1.0" selected>Buggy</option>
+                </select>
+        </div>
+        <div class="actions">
+                <button id="generate-turn" class="action-btn action-gen-lane" 
+                        title="Generate turns waypoints.">
+                    Generate Turns
+                </button>
+        </div>
+            <div id="two-way-panel" class="tool-section hidden">
+            <h4>Two-Way Path</h4>
+            <p id="two-way-info" class="panel-hint">Select a start and end point to define a path.</p>
+            <div class="actions">
+                <button id="mark-two-way" class="action-btn success" disabled 
+                        title="Mark all selected points as two-way">
+                    Mark as Two-Way
+                </button>
+            </div>
+        </div>
+        <div id="interpolation-panel" class="tool-section hidden">
+            <h4>Path Interpolation</h4>
+            <p id="interpolation-info" class="panel-hint">Select a path of 3 or more points to interpolate.</p>
+            
+            <div class="actions">
+                <button id="linear-interpolate" class="action-btn success" disabled 
+                        title="Create straight-line interpolation between selected points">
+                    Linear Interpolate
+                </button>
+            </div>
+            
+            <h4 style="margin-top: 20px;">Radial Interpolation</h4>
+            <div class="control-group">
+                <label for="radial-strength">Curve Strength</label>
+                <input type="range" id="radial-strength" min="-5" max="5" step="0.1" value="0" disabled
+                       title="Adjust the curvature of the interpolated path">
+                <input type="text" id="radial-strength-value" value="0.00" 
+                       style="width: 50px; text-align: center;" disabled>
+            </div>
+        </div>
+
+        <div class="tool-section">
+            <h4>Keyboard Shortcuts</h4>
+            <div class="shortcuts-info">
+                <p><kbd>D</kbd> - Remove Points Tool</p>
+                <p><kbd>M</kbd> - Move Points Tool</p>
+                <p><kbd>I</kbd> - Interpolate Tool</p>
+                <p><kbd>ESC</kbd> - Clear Selection</p>
+                <p><kbd>Del</kbd> - Delete Selected Points</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="right-panel" class="side-panel hidden">
+        <div class="panel-header">
+            <h3>Waypoint Information</h3>
+        </div>
+
+        <div id="waypoint-info" class="info-section">
+            <h4>Selected Waypoint</h4>
+            <div class="coord-display">
+                <div class="coord-row">
+                    <label>Database ID:</label>
+                    <span id="waypoint-id">-</span>
+                </div>
+                <div class="coord-row">
+                    <label>X Coordinate:</label>
+                    <span id="coord-x">0.000</span>
+                </div>
+                <div class="coord-row">
+                    <label>Y Coordinate:</label>
+                    <span id="coord-y">0.000</span>
+                </div>
+                <div class="coord-row">
+                    <label>Z Coordinate:</label>
+                    <span id="coord-z">0.000</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="info-section">
+            <h4>ViryaOS Lane Studio Features</h4>
+            <div class="instructions">
+                <p>🎯 <strong>Hover Detection:</strong> Cyan ring appears around waypoints</p>
+                <p>🔍 <strong>Visual Feedback:</strong> Real-time coordinate display</p>
+                <p>🖱️ <strong>Point Selection:</strong> Click waypoints to select and edit</p>
+                <p>⌨️ <strong>Keyboard Shortcuts:</strong> Quick tool access and commands</p>
+                <p>➕ <strong>Point Addition:</strong> Click anywhere on the map to add waypoints</p>
+                <p>🔄 <strong>Drag Operations:</strong> Move points with mouse drag</p>
+                <p>📈 <strong>Path Smoothing:</strong> Advanced interpolation algorithms</p>
+            </div>
+        </div>
+
+        <div class="info-section">
+            <h4>Project Statistics</h4>
+            <div class="stats-display">
+                <div class="stat-row">
+                    <label>Total Waypoints:</label>
+                    <span id="waypoint-count">0</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="left-lane-panel" class="side-panel hidden">
+        <div class="panel-header">
+            <h3>Lane Generation Tools</h3>
+        </div>
+        
+        <div class="tool-section">
+            <h4>Vehicle Configuration</h4>
+            <div class="lane-control">
+                <label for="vehicle-select">Vehicle Type:</label>
+                <select id="vehicle-select" title="Select vehicle type to determine lane width">
+                    <option value="0.6">AMR-10 (1.2m width)</option>
+                    <option value="0.7">ARM-50 (1.4m width)</option>
+                    <option value="1.0" selected>Buggy (1.0m width)</option>
+                </select>
+            </div>
+            
+            <div class="actions">
+                <button id="generate-lane" class="action-btn action-gen-lane" 
+                        title="Generate lane boundaries based on waypoints and vehicle width">
+                    Generate Lane
+                </button>
+            </div>
+            <div class="actions">
+                <button id="delete-lane" class="action-btn action-del-lane" 
+                        title="Remove all generated lane boundaries">
+                    🗑️ Delete Generated Lane
+                </button>
+            </div>
+        </div>
+
+        <div class="tool-section">
+            <h4>Lane Width Editing</h4>
+            <div class="actions">
+                <button id="tool-edit-lane" class="action-btn action-gen-lane" 
+                        title="Select two waypoints to modify lane width between them">
+                    Change Lane Width
+                </button>
+            </div>
+            
+            <div id="lane-width-editor" class="tool-section hidden">
+                <h4>Segment Width Configuration</h4>
+                
+                <div class="panel-control">
+                    <label for="left-lane-width-input">Left Width (m):</label>
+                    <div class="stepper-input">
+                        <button id="left-width-decrease-btn" title="Decrease left width by 0.05m">&minus;</button>
+                        <input type="text" id="left-lane-width-input" value="0.50">
+                        <button id="left-width-increase-btn" title="Increase left width by 0.05m">&plus;</button>
+                    </div>
+                </div>
+                
+                <div class="panel-control">
+                    <label for="right-lane-width-input">Right Width (m):</label>
+                    <div class="stepper-input">
+                        <button id="right-width-decrease-btn" title="Decrease right width by 0.05m">&minus;</button>
+                        <input type="text" id="right-lane-width-input" value="0.50">
+                        <button id="right-width-increase-btn" title="Increase right width by 0.05m">&plus;</button>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="lane-edit-info" class="info-display hidden">
+                </div>
+        </div>
+    </div>
+
+    <div id="right-lane-panel" class="side-panel hidden">
+        <div class="panel-header">
+            <h3>Lane Information</h3>
+        </div>
+        </div>
+
+    <div id="left-layout-panel" class="side-panel hidden">
+        <div class="panel-header">
+            <h3>Layout & Annotation Tools</h3>
+        </div>
+        
+        <div class="tool-section">
+            <h4>Add Elements</h4>
+            <div class="tool-grid">
+                <button id="tool-add-square" class="tool-button" title="Draw rectangular shapes">
+                    <span class="tool-icon">▭</span>
+                    Rectangle
+                </button>
+                <button id="tool-add-oval" class="tool-button" title="Draw circular and oval shapes">
+                    <span class="tool-icon">⚪</span>
+                    Oval
+                </button>
+                <button id="tool-add-arrow" class="tool-button" title="Draw directional arrows">
+                    <span class="tool-icon">⬆️</span>
+                    Arrow
+                </button>
+                <button id="tool-add-line" class="tool-button" title="Draw straight lines">
+                    <span class="tool-icon">📏</span>
+                    Line
+                </button>
+            </div>
+            
+            <div class="actions">
+                <button id="layout-insert-text" class="action-btn action-gen-lane" 
+                        title="Add text labels to the layout">
+                    Insert Text Label
+                </button>
+            </div>
+        </div>
+
+        
+        <div class="tool-section">
+            <h4>Edit Elements</h4>
+            <div class="tool-grid">
+                <button id="tool-select-shape" class="tool-button-layout" 
+                        title="Select shapes for moving and resizing">
+                    <span class="tool-icon">🖐️</span>
+                    Select & Transform
+                </button>
+                <button id="layout-delete-element" class="tool-button-layout" 
+                        title="Delete the currently selected element">
+                    <span class="tool-icon">🗑️</span>
+                    Delete Selected
+                </button>
+                <button id="layout-edit-text" class="tool-button-layout" 
+                        title="Edit the text content of selected text elements">
+                    <span class="tool-icon">✏️</span>
+                    Edit Text
+                </button>
+            </div>
+            
+            <div id="style-controls" class="tool-section hidden">
+                <h4>Element Styling</h4>
+                
+                <div id="shape-style-controls" class="color-palette hidden">
+                    <div class="color-control">
+                        <label for="fill-color">Fill Color</label>
+                        <input type="color" id="fill-color" value="#ffffff" 
+                               title="Change the fill color of the selected shape">
+                    </div>
+                    <div class="color-control">
+                        <label for="shape-opacity">Opacity</label>
+                        <div class="slider-container">
+                            <input type="range" id="shape-opacity" min="0" max="1" step="0.01" value="0.7"
+                                   title="Adjust the transparency of the selected shape">
+                            <span id="shape-opacity-value">0.70</span>
+                        </div>
+                    </div>
+                    <div class="panel-control" style="margin-top: 15px;">
+                        <label for="shape-rotation-value">Rotation (deg):</label>
+                        <div class="stepper-input">
+                            <button id="rotate-ccw-btn" title="Rotate Counter-Clockwise (-1°)">↺</button>
+                            <input type="text" id="shape-rotation-value" value="0.0" readonly 
+                                   style="width: 60px; text-align: center; border-left: 1px solid #4a5568; border-right: 1px solid #4a5568;">
+                            <button id="rotate-cw-btn" title="Rotate Clockwise (+1°)">↻</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="text-style-controls" class="color-palette hidden">
+                    <div class="color-control">
+                        <label for="text-color">Text Color</label>
+                        <input type="color" id="text-color" value="#FFFF00"
+                               title="Change the color of the selected text">
+                    </div>
+                    <div class="color-control">
+                        <label for="text-size">Text Size</label>
+                        <div class="slider-container">
+                            <input type="range" id="text-size" min="0.1" max="5" step="0.05" value="1.5"
+                                   title="Adjust the size of the selected text">
+                            <span id="text-size-value">0.50</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="right-layout-panel" class="side-panel hidden">
+        <div class="panel-header">
+            <h3>Layout Information</h3>
+        </div>
+    </div>
+
+    <div id="hover-coords" title="Real-time world coordinates under cursor"></div>
+
+    <div id="bottom-controls">
+        <div class="control-group">
+            <label>Point Size:</label>
+            <input type="range" id="point-size" min="0.1" max="5" step="0.1" value="0.5"
+                   title="Adjust the size of point cloud points">
+            <span id="size-value">0.5</span>
+        </div>
+
+        <div class="control-group">
+            <label>Voxel Size:</label>
+            <input type="range" id="voxel-size" min="0.1" max="5" step="0.1" value="1.0"
+                   title="Adjust the voxel size multiplier for point cloud rendering">
+            <span id="voxel-value">1.0</span>
+        </div>
+
+        <div class="control-group">
+            <label>Opacity:</label>
+            <input type="range" id="opacity" min="0" max="1" step="0.01" value="1"
+                   title="Adjust the transparency of the point cloud and waypoints">
+            <span id="opacity-value">1.0</span>
+        </div>
+
+        <div class="control-group">
+            <label>Waypoint Size:</label>
+            <input type="range" id="waypoint-size" min="0.01" max="0.5" step="0.005" value="0.05"
+                   title="Adjust the size of waypoint markers">
+            <span id="waypoint-size-value">0.05</span>
+        </div>
+
+        <div class="control-group">
+            <label>Color Mode:</label>
+            <select id="color-mode" title="Select point cloud coloring method">
+                <option value="default">Default White</option>
+                <option value="height">Height-based (Z-axis)</option>
+            </select>
+        </div>
+
+        <div class="control-group">
+            <label>View Mode:</label>
+            <select id="view-mode" title="Select camera view mode">
+                <option value="orbit">3D Orbit View</option>
+                <option value="top">Top-down View</option>
+            </select>
+        </div>
+    </div>
+
+    <div id="text-input-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h3 id="modal-title">Enter Label Text</h3>
+            <input type="text" id="text-input-field" placeholder="Enter your text here..."
+                   title="Type the text content for your label">
+            <div class="modal-actions">
+                <button id="text-input-cancel" class="action-btn action-del-lane" 
+                        title="Cancel text input and close dialog">
+                    Cancel
+                </button>
+                <button id="text-input-confirm" class="action-btn success" 
+                        title="Confirm text input and create/update label">
+                    Confirm
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="delete-confirm" class="modal-overlay hidden">
+        <div class="modal-content">
+            <h3 id="modal-title">ARE YOU SURE!!!</h3>
+            <div class="modal-actions">
+                <button id="delete-confirm-cancel" class="action-btn action-del-lane" 
+                        title="Cancel deletion">
+                    Cancel
+                </button>
+                <button id="confirm-deletion" class="action-btn success" 
+                        title="Confirm Deletion">
+                    Confirm
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>
