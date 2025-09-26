@@ -9,7 +9,7 @@
  * - Waypoint database management with SQLite integration
  * - Lane generation with customizable width parameters
  * - Interactive shape and text annotation tools
- * - Real-time coordinate transformation (ROS â†” Three.js)
+ * - Real-time coordinate transformation (ROS ↔ Three.js)
  * - Advanced interpolation algorithms (linear and radial)
  * - Multi-view support (orbit, top-down orthographic)
  * * @author ViryaOSLaneStudio Development Team
@@ -24,52 +24,91 @@ import { PCDLoader } from 'three/addons/loaders/PCDLoader.js';
 import { FontLoader } from 'three/addons/loaders/FontLoader.js';
 import { TextGeometry } from 'three/addons/geometries/TextGeometry.js';
 
+// MODIFIED: All table schemas are now defined as per the new structure.
 /**
- * Database schema definition for waypoint storage
- * Supports spatial coordinates, orientation, and lane width parameters
+ * Main table for storing the physical location of each point.
  */
-const WAYPOINT_TABLE_SQL = `
-CREATE TABLE IF NOT EXISTS waypoints (
+const WAYPOINT_POSE_DATA_TABLE = `
+CREATE TABLE IF NOT EXISTS waypoint_pose_data (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     x REAL NOT NULL,
     y REAL NOT NULL,
-    z REAL NOT NULL,
-    roll REAL DEFAULT 0,
-    pitch REAL DEFAULT 0,
-    yaw REAL DEFAULT 0,
-    zone TEXT DEFAULT 'N/A',
-    width_left REAL DEFAULT 0.5,
-    width_right REAL DEFAULT 0.5,
-    two_way INTEGER DEFAULT 0
+    z REAL NOT NULL
 );`;
 
 /**
- * Database schema definition for edge graph storage
- * Stores connections between waypoints with distance-based weights
+ * Defines the connections (edges) between the waypoints.
  */
-const EDGE_GRAPH_TABLE_SQL = `
-CREATE TABLE IF NOT EXISTS edge_graph (
+const GRAPH_DATA_TABLE = `
+CREATE TABLE IF NOT EXISTS graph_data (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     id1 INTEGER NOT NULL,
     id2 INTEGER NOT NULL,
-    weight REAL NOT NULL DEFAULT 0.0,
-    FOREIGN KEY (id1) REFERENCES waypoints (id) ON DELETE CASCADE,
-    FOREIGN KEY (id2) REFERENCES waypoints (id) ON DELETE CASCADE
+    edgeWeight REAL NOT NULL DEFAULT 0.0,
+    direction INTEGER DEFAULT 0,  -- 0 for one-way, 1 for two-way
+    FOREIGN KEY (id1) REFERENCES waypoint_pose_data (id) ON DELETE CASCADE,
+    FOREIGN KEY (id2) REFERENCES waypoint_pose_data (id) ON DELETE CASCADE
 );`;
 
-const JUNCTION_POINTS_TABLE_SQL = `
-CREATE TABLE IF NOT EXISTS junction_points (
+/**
+ * Stores the lane width information associated with each waypoint.
+ */
+const FREE_SPACE_DATA_TABLE = `
+CREATE TABLE IF NOT EXISTS free_space_data (
+    id INTEGER PRIMARY KEY,
+    left_width REAL DEFAULT 0.5,
+    right_width REAL DEFAULT 0.5,
+    FOREIGN KEY (id) REFERENCES waypoint_pose_data (id) ON DELETE CASCADE
+);`;
+
+/**
+ * Defines junctions and their connected waypoints.
+ */
+const JUNCTION_TABLE = `
+CREATE TABLE IF NOT EXISTS junction_table (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    junction_waypoint_id INTEGER NOT NULL,
-    from_waypoint_id INTEGER NOT NULL,
-    to_waypoint_id INTEGER NOT NULL,
-    entry_x REAL NOT NULL,
-    entry_y REAL NOT NULL,
-    entry_z REAL NOT NULL,
-    exit_x REAL NOT NULL,
-    exit_y REAL NOT NULL,
-    exit_z REAL NOT NULL,
-    FOREIGN KEY (junction_waypoint_id) REFERENCES waypoints (id) ON DELETE CASCADE
+    junction_name INTEGER NOT NULL, -- The waypoint ID that acts as the junction center
+    edge_number INTEGER,
+    a INTEGER,
+    b INTEGER,
+    c INTEGER,
+    d INTEGER,
+    FOREIGN KEY (junction_name) REFERENCES waypoint_pose_data (id) ON DELETE CASCADE
+);`;
+
+/**
+ * Stores floating-point values for a safety zone around a waypoint.
+ */
+const SAFETY_ZONE_TABLE = `
+CREATE TABLE IF NOT EXISTS safety_zone_table (
+    id INTEGER PRIMARY KEY,
+    front REAL,
+    back REAL,
+    right REAL,
+    left REAL,
+    FOREIGN KEY (id) REFERENCES waypoint_pose_data (id) ON DELETE CASCADE
+);`;
+
+/**
+ * Flags waypoints that have special text-based triggers.
+ */
+const CRITICAL_POINTS_TABLE = `
+CREATE TABLE IF NOT EXISTS critical_points (
+    id INTEGER PRIMARY KEY,
+    string_trigger TEXT,
+    FOREIGN KEY (id) REFERENCES waypoint_pose_data (id) ON DELETE CASCADE
+);`;
+
+/**
+ * Stores operational parameters like speed and wait times for waypoints.
+ */
+const OPERATIONAL_INFO_TABLE = `
+CREATE TABLE IF NOT EXISTS operational_info_table (
+    id INTEGER PRIMARY KEY,
+    speed REAL DEFAULT 0.0,
+    wait INTEGER DEFAULT 0,
+    station INTEGER DEFAULT 0,
+    FOREIGN KEY (id) REFERENCES waypoint_pose_data (id) ON DELETE CASCADE
 );`;
 
 
@@ -310,7 +349,7 @@ class ViryaOSLaneStudio {
 
         this.waypointsData = [];
 
-        console.log('ðŸš€ ViryaOSLaneStudio Application starting...');
+        console.log('🚀 ViryaOSLaneStudio Application starting...');
     }
 
     // ====================================================================
@@ -325,7 +364,7 @@ class ViryaOSLaneStudio {
      */
     async init() {
         try {
-            console.log('ðŸ”§ Initializing ViryaOSLaneStudio system...');
+            console.log('🔧 Initializing ViryaOSLaneStudio system...');
             const container = document.getElementById('app');
             if (!container) {
                 throw new Error('Main app container not found');
@@ -347,15 +386,15 @@ class ViryaOSLaneStudio {
             this.isInitialized = true;
 
             console.log('');
-            console.log('ðŸŽ‰ ===== ViryaOSLaneStudio READY =====');
-            console.log('âœ… Direct manipulation for shapes (move/resize)');
-            console.log('âœ… Double-click to edit text enabled');
-            console.log('âœ… Removed conflicting transform logic');
+            console.log('🎊 ===== ViryaOSLaneStudio READY =====');
+            console.log('✅ Direct manipulation for shapes (move/resize)');
+            console.log('✅ Double-click to edit text enabled');
+            console.log('✅ Removed conflicting transform logic');
             console.log('');
-            console.log('ðŸ› DEBUG: window.waypointEditPlus.getStatus()');
+            console.log('🐞 DEBUG: window.waypointEditPlus.getStatus()');
             console.log('=====================================');
         } catch (error) {
-            console.error('âŒ Failed to initialize ViryaOSLaneStudio:', error);
+            console.error('❌ Failed to initialize ViryaOSLaneStudio:', error);
             this.showErrorMessage(error.message);
         }
     }
@@ -371,14 +410,14 @@ class ViryaOSLaneStudio {
                 this.SQL = await initSqlJs({
                     locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/${file}`
                 });
-                console.log('âœ… SQL.js initialized for ViryaOSLaneStudio');
+                console.log('✅ SQL.js initialized for ViryaOSLaneStudio');
                 return true;
             } else {
-                console.warn('âš ï¸ SQL.js not available');
+                console.warn('⚠️ SQL.js not available');
                 return false;
             }
         } catch (error) {
-            console.error('âŒ Failed to initialize SQL.js:', error);
+            console.error('❌ Failed to initialize SQL.js:', error);
             return false;
         }
     }
@@ -429,9 +468,9 @@ class ViryaOSLaneStudio {
         const fontPath = 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/fonts/helvetiker_regular.typeface.json';
         this.fontLoader.load(fontPath, (loadedFont) => {
             this.font = loadedFont;
-            console.log('âœ… Font loaded successfully for text labels.');
+            console.log('✅ Font loaded successfully for text labels.');
         }, undefined, (error) => {
-            console.error('âŒ Failed to load font:', error);
+            console.error('❌ Failed to load font:', error);
         });
     }
 
@@ -631,7 +670,7 @@ class ViryaOSLaneStudio {
         // Proper cleanup
         shape.geometry.dispose();
         shape.material.dispose();
-        console.log('ðŸ—‘ï¸ Deleted shape');
+        console.log('🗑️ Deleted shape');
     }
 
     // ====================================================================
@@ -916,16 +955,17 @@ async generateturn() {
         return;
     }
 
-    this.db.run(JUNCTION_POINTS_TABLE_SQL);
 
     this.showLoader();
     console.log('🚀 Starting full graph processing...');
 
-    this.db.run("DELETE FROM junction_points");
+    // MODIFIED: Target the new junction_table.
+    this.db.run("DELETE FROM junction_table");
     const insertJunctionStmt = this.db.prepare(
-        `INSERT INTO junction_points 
-        (junction_waypoint_id, from_waypoint_id, to_waypoint_id, entry_x, entry_y, entry_z, exit_x, exit_y, exit_z) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        // MODIFIED: The INSERT statement now matches the new junction_table schema.
+        `INSERT INTO junction_table 
+        (junction_name, edge_number, a, b, c, d) 
+        VALUES (?, ?, ?, ?, ?, ?)`
     );
 
     const vehicleSelect = document.getElementById('vehicle-select-turn');
@@ -942,7 +982,8 @@ async generateturn() {
         adj.set(wp.id, new Set());
         dbIdToWaypointMap.set(wp.id, { id: wp.id, pos: wp.pos });
     });
-    let stmt = this.db.prepare("SELECT id1, id2 FROM edge_graph");
+    // MODIFIED: Select from graph_data table.
+    let stmt = this.db.prepare("SELECT id1, id2 FROM graph_data");
     while (stmt.step()) {
         const [id1, id2] = stmt.get();
         if (adj.has(id1) && adj.has(id2)) {
@@ -970,6 +1011,17 @@ async generateturn() {
             const neighbors = Array.from(adj.get(junctionId));
             const p_j = dbIdToWaypointMap.get(junctionId).pos;
 
+            // MODIFIED: Save junction info to the new table structure.
+            const neighborIds = neighbors.slice(0, 4); // Take up to 4 neighbors
+            insertJunctionStmt.run([
+                junctionId,
+                neighbors.length,
+                neighborIds[0] || null,
+                neighborIds[1] || null,
+                neighborIds[2] || null,
+                neighborIds[3] || null,
+            ]);
+
             for (let i = 0; i < neighbors.length; i++) {
                 for (let j = i + 1; j < neighbors.length; j++) {
                     const p1_id = neighbors[i];
@@ -994,10 +1046,8 @@ async generateturn() {
                     const startPoint = new THREE.Vector3().lerpVectors(p_j, p1, trimDist / dist1);
                     const endPoint = new THREE.Vector3().lerpVectors(p_j, p2, trimDist / dist2);
                     
-                    const entryRos = this.threeToRos(startPoint.clone().add(this.mapOffset));
-                    const exitRos = this.threeToRos(endPoint.clone().add(this.mapOffset));
-                    insertJunctionStmt.run([junctionId, p1_id, p2_id, entryRos.x, entryRos.y, entryRos.z, exitRos.x, exitRos.y, exitRos.z]);
-                    insertJunctionStmt.run([junctionId, p2_id, p1_id, exitRos.x, exitRos.y, exitRos.z, entryRos.x, entryRos.y, entryRos.z]);
+                    // MODIFIED: Removed the old junction_points INSERT statements.
+                    // The main junction data is now saved above.
 
                     // ==========================================================
                     //  NEW: Find the physically closest nodes to attach the curve to.
@@ -1040,7 +1090,8 @@ async generateturn() {
         adj.set(wp.id, new Set());
         dbIdToWaypointMap.set(wp.id, { id: wp.id, pos: wp.pos });
     });
-    stmt = this.db.prepare("SELECT id1, id2 FROM edge_graph");
+    // MODIFIED: Select from graph_data table.
+    stmt = this.db.prepare("SELECT id1, id2 FROM graph_data");
     while (stmt.step()) {
         const [id1, id2] = stmt.get();
         if (adj.has(id1) && adj.has(id2)) {
@@ -1137,20 +1188,42 @@ async applyGraphModifications(idsToDelete, pointsToAdd, edgesToAdd, dbIdToWaypoi
         this.db.run("BEGIN TRANSACTION");
         if (idsToDelete.size > 0) {
             const placeholders = Array.from(idsToDelete).map(() => '?').join(',');
-            this.db.run(`DELETE FROM waypoints WHERE id IN (${placeholders})`, Array.from(idsToDelete));
-            this.db.run(`DELETE FROM edge_graph WHERE id1 IN (${placeholders}) OR id2 IN (${placeholders})`, [...Array.from(idsToDelete), ...Array.from(idsToDelete)]);
+            // MODIFIED: Now just deletes from the main pose table. CASCADE handles the rest.
+            this.db.run(`DELETE FROM waypoint_pose_data WHERE id IN (${placeholders})`, Array.from(idsToDelete));
         }
+
         const newIdMap = new Map();
-        const insertStmt = this.db.prepare("INSERT INTO waypoints (x, y, z) VALUES (?, ?, ?)");
+        // MODIFIED: Insert into the new pose table.
+        const insertStmt = this.db.prepare("INSERT INTO waypoint_pose_data (x, y, z) VALUES (?, ?, ?)");
+        
+        // NEW: Prepare statements for all the new satellite tables.
+        const freeSpaceStmt = this.db.prepare("INSERT INTO free_space_data (id, left_width, right_width) VALUES (?, ?, ?)");
+        const opInfoStmt = this.db.prepare("INSERT INTO operational_info_table (id, speed, wait, station) VALUES (?, 0.0, 0, 0)");
+        const critPointStmt = this.db.prepare("INSERT INTO critical_points (id, string_trigger) VALUES (?, NULL)");
+        const safetyZoneStmt = this.db.prepare("INSERT INTO safety_zone_table (id) VALUES (?)");
+
         for (const point of pointsToAdd) {
             const rosPos = this.threeToRos(point.pos.clone().add(this.mapOffset));
             insertStmt.run([rosPos.x, rosPos.y, rosPos.z]);
             const newId = this.db.exec("SELECT last_insert_rowid()")[0].values[0][0];
+            
+            // NEW: Insert default rows into all satellite tables for the new waypoint.
+            freeSpaceStmt.run([newId, 0.5, 0.5]);
+            opInfoStmt.run([newId]);
+            critPointStmt.run([newId]);
+            safetyZoneStmt.run([newId]);
+
             newIdMap.set(point.tempId, newId);
             dbIdToWaypointMap.set(newId, { id: newId, pos: point.pos });
         }
         insertStmt.free();
-        const edgeStmt = this.db.prepare("INSERT INTO edge_graph (id1, id2, weight) VALUES (?, ?, ?)");
+        freeSpaceStmt.free();
+        opInfoStmt.free();
+        critPointStmt.free();
+        safetyZoneStmt.free();
+
+        // MODIFIED: Insert into the new graph_data table.
+        const edgeStmt = this.db.prepare("INSERT INTO graph_data (id1, id2, edgeWeight, direction) VALUES (?, ?, ?, 0)");
         for (const edge of edgesToAdd) {
             const id1 = typeof edge.from === 'string' ? newIdMap.get(edge.from) : edge.from;
             const id2 = typeof edge.to === 'string' ? newIdMap.get(edge.to) : edge.to;
@@ -1223,7 +1296,8 @@ async applyWaypointUpdates(updates) {
     if (updates.size === 0) return;
     try {
         this.db.run("BEGIN TRANSACTION");
-        const stmt = this.db.prepare("UPDATE waypoints SET x = ?, y = ?, z = ? WHERE id = ?");
+        // MODIFIED: Update the new waypoint_pose_data table.
+        const stmt = this.db.prepare("UPDATE waypoint_pose_data SET x = ?, y = ?, z = ? WHERE id = ?");
         for (const [id, pos] of updates.entries()) {
             stmt.run([pos.x, pos.y, pos.z, id]);
         }
@@ -1456,10 +1530,18 @@ findPathsToNearestJunctions(junctionId, adj) {
         this.clearLane();
         if (!this.db) return;
 
-        // Step 1: Load graph data and build adjacency list.
+        // MODIFIED: This function now uses a JOIN to get pose and free space data together.
         const dbIdToWaypointMap = new Map();
         const simpleAdj = new Map();
-        let stmt = this.db.prepare("SELECT id, x, y, z, width_left, width_right FROM waypoints");
+        let stmt = this.db.prepare(`
+            SELECT
+                p.id, p.x, p.y, p.z,
+                fs.left_width, fs.right_width
+            FROM
+                waypoint_pose_data AS p
+            LEFT JOIN
+                free_space_data AS fs ON p.id = fs.id
+        `);
         while (stmt.step()) {
             const row = stmt.getAsObject();
             dbIdToWaypointMap.set(row.id, {
@@ -1472,7 +1554,8 @@ findPathsToNearestJunctions(junctionId, adj) {
 
         if (dbIdToWaypointMap.size < 2) return;
 
-        stmt = this.db.prepare("SELECT id1, id2 FROM edge_graph");
+        // MODIFIED: Select from the new graph_data table.
+        stmt = this.db.prepare("SELECT id1, id2 FROM graph_data");
         const edges = [];
         while (stmt.step()) {
             const [id1, id2] = stmt.get();
@@ -1521,8 +1604,9 @@ findPathsToNearestJunctions(junctionId, adj) {
 
             for (let i = 0; i < waypointsData.length; i++) {
                 const p_curr = waypointsData[i].pos;
-                const halfWidthLeft = (waypointsData[i].width_left || 0.5);
-                const halfWidthRight = (waypointsData[i].width_right || 0.5);
+                // MODIFIED: Column names are now left_width and right_width
+                const halfWidthLeft = (waypointsData[i].left_width || 0.5);
+                const halfWidthRight = (waypointsData[i].right_width || 0.5);
                 let normal;
                 if (i === 0) {
                     const dir_out = waypointsData[i + 1].pos.clone().sub(p_curr).normalize();
@@ -1583,11 +1667,12 @@ findPathsToNearestJunctions(junctionId, adj) {
         const halfWidth = totalWidth / 2;
 
         try {
-            this.db.run("UPDATE waypoints SET width_left = ?, width_right = ?", [halfWidth, halfWidth]);
-            console.log(`âœ… Applied global width ${totalWidth}m to all waypoints.`);
+            // MODIFIED: Update the free_space_data table instead of the old waypoints table.
+            this.db.run("UPDATE free_space_data SET left_width = ?, right_width = ?", [halfWidth, halfWidth]);
+            console.log(`✅ Applied global width ${totalWidth}m to all waypoints.`);
             await this.drawLane();
         } catch (error) {
-            console.error("âŒ Failed to update waypoint widths:", error);
+            console.error("❌ Failed to update waypoint widths:", error);
         }
     }
 
@@ -1792,7 +1877,7 @@ findPathsToNearestJunctions(junctionId, adj) {
         }
 
         this.mapObject.material.needsUpdate = true;
-        console.log(`ðŸŽ¨ Point cloud color mode set to: ${colorMode}`);
+        console.log(`🎨 Point cloud color mode set to: ${colorMode}`);
     }
 
     /**
@@ -1857,7 +1942,7 @@ findPathsToNearestJunctions(junctionId, adj) {
 
                     this.setView('orbit');
                     URL.revokeObjectURL(url);
-                    console.log(`âœ… Loaded point cloud: ${file.name}`);
+                    console.log(`✅ Loaded point cloud: ${file.name}`);
                     resolve();
                 } catch (err) {
                     reject(err);
@@ -1879,7 +1964,7 @@ findPathsToNearestJunctions(junctionId, adj) {
             positions[i + 1] = x;   // ROS X becomes Three.js Y
         }
         geometry.attributes.position.needsUpdate = true;
-        console.log('âœ… Applied ROS coordinate transformation');
+        console.log('✅ Applied ROS coordinate transformation');
     }
 
     /**
@@ -1900,41 +1985,17 @@ findPathsToNearestJunctions(junctionId, adj) {
 
             this.db = new this.SQL.Database(new Uint8Array(buffer));
 
-            // ===================== FIX 1 START =====================
-            // Ensure the edge_graph table exists. If it already does, this command does nothing.
-            // This prevents errors when loading a DB that was created before the graph feature was added.
-            this.db.run(EDGE_GRAPH_TABLE_SQL);
-            this.db.run(JUNCTION_POINTS_TABLE_SQL);
-            // ===================== FIX 1 END =======================
-
-            // Ensure all required columns exist
-            const columns = this.db.exec("PRAGMA table_info(waypoints);")[0].values;
-
-            if (!columns.some(col => col[1] === 'zone')) {
-                this.db.run("ALTER TABLE waypoints ADD COLUMN zone TEXT DEFAULT 'N/A';");
-            }
-            if (!columns.some(col => col[1] === 'width_left')) {
-                this.db.run("ALTER TABLE waypoints ADD COLUMN width_left REAL DEFAULT 0.5;");
-            }
-            if (!columns.some(col => col[1] === 'width_right')) {
-                this.db.run("ALTER TABLE waypoints ADD COLUMN width_right REAL DEFAULT 0.5;");
-            }
-            if (!columns.some(col => col[1] === 'two_way')) {
-                this.db.run("ALTER TABLE waypoints ADD COLUMN two_way INTEGER DEFAULT 0;");
-            }
-
-            this.db.run("UPDATE waypoints SET zone = 'N/A' WHERE zone IS NULL;");
-
-            // Validate table structure
-            const tableCheck = this.db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='waypoints'");
+            // MODIFIED: Old migration logic is removed. The app now assumes the new schema.
+            // We just check if the main table exists to validate the file.
+            const tableCheck = this.db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='waypoint_pose_data'");
             if (tableCheck.length === 0) {
-                throw new Error("No waypoints table found in the database");
+                throw new Error("No waypoint_pose_data table found in the database. The file may be invalid or in an old format.");
             }
 
             await this.refreshWaypointsFromDB();
-            console.log('âœ… ViryaOSLaneStudio waypoints loaded successfully');
+            console.log('✅ ViryaOSLaneStudio waypoints loaded successfully');
         } catch (err) {
-            console.error("âŒ Error loading database:", err);
+            console.error("❌ Error loading database:", err);
             alert(`Error loading database: ${err.message}`);
         }
     }
@@ -1949,7 +2010,8 @@ findPathsToNearestJunctions(junctionId, adj) {
         if (!this.db) return;
 
         try {
-            const stmt = this.db.prepare("SELECT id, x, y, z FROM waypoints ORDER BY id;");
+            // MODIFIED: Select from the new waypoint_pose_data table.
+            const stmt = this.db.prepare("SELECT id, x, y, z FROM waypoint_pose_data ORDER BY id;");
             const positions = [];
             this.indexToDbId = [];
             this.waypointsData = [];
@@ -1957,7 +2019,7 @@ findPathsToNearestJunctions(junctionId, adj) {
             while (stmt.step()) {
                const row = stmt.get();
                 const dbId = row[0];
-                const twoWayFlag = row[4];
+                // MODIFIED: The two_way flag is no longer in this table and has been removed from here.
 
                 this.indexToDbId.push(dbId);
 
@@ -1969,8 +2031,7 @@ findPathsToNearestJunctions(junctionId, adj) {
                 // Store the data together
                 this.waypointsData.push({
                     id: dbId,
-                    pos: position,
-                    two_way: twoWayFlag
+                    pos: position
                 });
             }
             stmt.free();
@@ -1992,7 +2053,7 @@ findPathsToNearestJunctions(junctionId, adj) {
             this.updateWaypointVisuals();
             this.updateWaypointCount();
         } catch (err) {
-            console.error("âŒ Error loading waypoints:", err);
+            console.error("❌ Error loading waypoints:", err);
         }
     }
 
@@ -2164,61 +2225,6 @@ findPathsToNearestJunctions(junctionId, adj) {
     // WAYPOINT DATABASE OPERATIONS
     // ====================================================================
 
-    /**
-     * Adds a new single waypoint and connects it to the previously last waypoint in the DB.
-     * @param {THREE.Vector3} position - The 3D position for the new waypoint.
-     * @async
-     */
-    async addPoint(position) {
-        if (!this.db) {
-            this.db = new this.SQL.Database();
-            this.db.run(WAYPOINT_TABLE_SQL);
-            this.db.run(EDGE_GRAPH_TABLE_SQL);
-        }
-    
-        // Get last point info before inserting the new one
-        let lastPointId = null;
-        let lastPointRosPos = null;
-        const result = this.db.exec("SELECT id, x, y, z FROM waypoints ORDER BY id DESC LIMIT 1");
-        if (result.length > 0 && result[0].values.length > 0) {
-            const lastPoint = result[0].values[0];
-            lastPointId = lastPoint[0];
-            lastPointRosPos = { x: lastPoint[1], y: lastPoint[2], z: lastPoint[3] };
-        }
-    
-        const threePos = position.clone().add(this.mapOffset);
-        
-        // ===================== FIX START =====================
-        // Force Z-coordinate to 0 to ensure all added points are 2D.
-        threePos.z = 0;
-        // ===================== FIX END =======================
-
-        const rosPos = this.threeToRos(threePos);
-    
-        this.db.run("BEGIN TRANSACTION");
-        try {
-            // Insert the new waypoint
-            this.db.run("INSERT INTO waypoints (x, y, z) VALUES (?, ?, ?)", [rosPos.x, rosPos.y, rosPos.z]);
-            const newPointId = this.db.exec("SELECT last_insert_rowid()")[0].values[0][0];
-    
-            // If there was a previous point, create an edge to it
-            if (lastPointId !== null && lastPointRosPos !== null) {
-                const dx = rosPos.x - lastPointRosPos.x;
-                const dy = rosPos.y - lastPointRosPos.y;
-                const dz = rosPos.z - lastPointRosPos.z;
-                const weight = Math.sqrt(dx * dx + dy * dy + dz * dz);
-                this.db.run("INSERT INTO edge_graph (id1, id2, weight) VALUES (?, ?, ?)", [lastPointId, newPointId, weight]);
-            }
-            this.db.run("COMMIT");
-        } catch (e) {
-            this.db.run("ROLLBACK");
-            console.error("Failed to add point and edge:", e);
-            this.showErrorMessage("Failed to add point.");
-        }
-    
-        await this.refreshWaypointsFromDB();
-    }
-
 
     /**
      * Delete selected waypoints from database
@@ -2228,19 +2234,17 @@ findPathsToNearestJunctions(junctionId, adj) {
         if (!this.db || this.selectedIndices.size === 0) return;
         
         const idsToDelete = Array.from(this.selectedIndices).map(index => this.indexToDbId[index]);
-        console.log(`${idsToDelete}`);
         if (idsToDelete.length === 0) return;
 
         const placeholders = idsToDelete.map(() => '?').join(',');
         try{
-            this.db.run(`DELETE FROM waypoints WHERE id IN (${placeholders})`, idsToDelete);
-            this.db.run(`DELETE FROM junction_points WHERE junction_waypoint_id IN (${placeholders})`, idsToDelete);
-            this.db.run(`DELETE FROM edge_graph WHERE id1 IN (${placeholders})`, idsToDelete);
-            this.db.run(`DELETE FROM edge_graph WHERE id2 IN (${placeholders})`, idsToDelete);
-        } catch(e){}
-
-
-
+            // MODIFIED: Simplified to a single DELETE statement.
+            // The `ON DELETE CASCADE` in the schema handles cleaning up all related data automatically.
+            this.db.run(`DELETE FROM waypoint_pose_data WHERE id IN (${placeholders})`, idsToDelete);
+            console.log(`Deleted ${idsToDelete.length} waypoints and their related data.`);
+        } catch(e){
+            console.error("Deletion failed:", e);
+        }
 
         this.clearSelection();
         await this.refreshWaypointsFromDB();
@@ -2507,7 +2511,8 @@ findPathsToNearestJunctions(junctionId, adj) {
                 const threePos = newPositions[i].clone().add(this.mapOffset);
                 const rosPos = this.threeToRos(threePos);
 
-                this.db.run("UPDATE waypoints SET x = ?, y = ?, z = ? WHERE id = ?", 
+                // MODIFIED: Update the new waypoint_pose_data table.
+                this.db.run("UPDATE waypoint_pose_data SET x = ?, y = ?, z = ? WHERE id = ?", 
                            [rosPos.x, rosPos.y, rosPos.z, db_id]);
             }
 
@@ -2681,16 +2686,14 @@ updateWaypointInfo(waypointIndex) {
 
     try {
         const dbId = this.indexToDbId[waypointIndex];
-        const stmt = this.db.prepare("SELECT x, y, z, roll, pitch, yaw FROM waypoints WHERE id = ?");
+        // MODIFIED: Select from waypoint_pose_data and removed roll/pitch/yaw.
+        const stmt = this.db.prepare("SELECT x, y, z FROM waypoint_pose_data WHERE id = ?");
         const result = stmt.get([dbId]);
         stmt.free();
 
         if (result) {   
             const waypointInfo = document.getElementById('waypoint-info');
-            console.log("Database result for selected point:", result);
             if (waypointInfo) {
-                // The line that was here has been removed.
-
                 document.getElementById('coord-x').textContent = (result[0] || 0).toFixed(4);
                 document.getElementById('coord-y').textContent = (result[1] || 0).toFixed(4);
                 document.getElementById('coord-z').textContent = (result[2] || 0).toFixed(4);
@@ -2726,7 +2729,13 @@ updateWaypointInfo(waypointIndex) {
             const dbId = this.indexToDbId[waypointIndex];
             if (dbId === undefined) return;
 
-            const stmt = this.db.prepare("SELECT x, y, z, width_left, width_right FROM waypoints WHERE id = ?");
+            // MODIFIED: Query now joins pose and free space tables.
+            const stmt = this.db.prepare(`
+                SELECT p.x, p.y, p.z, fs.left_width, fs.right_width 
+                FROM waypoint_pose_data as p
+                LEFT JOIN free_space_data as fs ON p.id = fs.id
+                WHERE p.id = ?
+            `);
             const result = stmt.get(dbId);
             stmt.free();
 
@@ -2770,13 +2779,15 @@ updateWaypointInfo(waypointIndex) {
         const indices = [...this.laneEditSelection].sort((a, b) => a - b);
         const startDbId = this.indexToDbId[indices[0]];
         const endDbId = this.indexToDbId[indices[1]];
-        const column = `width_${side}`;
+        // MODIFIED: Column name is now left_width or right_width
+        const column = `${side}_width`;
 
         try {
-            this.db.run(`UPDATE waypoints SET ${column} = ? WHERE id >= ? AND id < ?`, [width, startDbId, endDbId]);
+            // MODIFIED: Update the free_space_data table.
+            this.db.run(`UPDATE free_space_data SET ${column} = ? WHERE id >= ? AND id < ?`, [width, startDbId, endDbId]);
             await this.drawLane();
         } catch (error) {
-            console.error(`âŒ Failed to apply lane ${side} width:`, error);
+            console.error(`❌ Failed to apply lane ${side} width:`, error);
         }
     }
 
@@ -2824,8 +2835,14 @@ async drawPoints(start, end, startDbId = null, endDbId = null) {
 async batchAddPoints(points, startDbId = null, endDbId = null) {
     if (!this.db) {
         this.db = new this.SQL.Database();
-        this.db.run(WAYPOINT_TABLE_SQL);
-        this.db.run(EDGE_GRAPH_TABLE_SQL);
+        // MODIFIED: Create all seven tables if the database is new.
+        this.db.run(WAYPOINT_POSE_DATA_TABLE);
+        this.db.run(GRAPH_DATA_TABLE);
+        this.db.run(FREE_SPACE_DATA_TABLE);
+        this.db.run(JUNCTION_TABLE);
+        this.db.run(SAFETY_ZONE_TABLE);
+        this.db.run(CRITICAL_POINTS_TABLE);
+        this.db.run(OPERATIONAL_INFO_TABLE);
     }
 
     // --- CRITICAL FIX ---
@@ -2833,13 +2850,14 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
     // Its only job is to create the single, final edge.
     if (points.length === 0 && startDbId && endDbId) {
          try {
-            const startRes = this.db.exec(`SELECT x, y, z FROM waypoints WHERE id = ${startDbId}`);
-            const endRes = this.db.exec(`SELECT x, y, z FROM waypoints WHERE id = ${endDbId}`);
+            const startRes = this.db.exec(`SELECT x, y, z FROM waypoint_pose_data WHERE id = ${startDbId}`);
+            const endRes = this.db.exec(`SELECT x, y, z FROM waypoint_pose_data WHERE id = ${endDbId}`);
             if (startRes.length > 0 && endRes.length > 0) {
                 const startPos = { x: startRes[0].values[0][0], y: startRes[0].values[0][1], z: startRes[0].values[0][2] };
                 const endPos = { x: endRes[0].values[0][0], y: endRes[0].values[0][1], z: endRes[0].values[0][2] };
                 const weight = Math.sqrt(Math.pow(endPos.x - startPos.x, 2) + Math.pow(endPos.y - startPos.y, 2) + Math.pow(endPos.z - startPos.z, 2));
-                this.db.run("INSERT INTO edge_graph (id1, id2, weight) VALUES (?, ?, ?)", [startDbId, endDbId, weight]);
+                // MODIFIED: Insert into graph_data table.
+                this.db.run("INSERT INTO graph_data (id1, id2, edgeWeight) VALUES (?, ?, ?)", [startDbId, endDbId, weight]);
                 await this.refreshWaypointsFromDB();
             }
         } catch(e) { console.error("Failed to create closing edge:", e); }
@@ -2851,12 +2869,19 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
     let lastPointId = startDbId;
     try {
         this.db.run("BEGIN TRANSACTION");
-        const waypointStmt = this.db.prepare("INSERT INTO waypoints (x, y, z) VALUES (?, ?, ?)");
-        const edgeStmt = this.db.prepare("INSERT INTO edge_graph (id1, id2, weight) VALUES (?, ?, ?)");
+        const waypointStmt = this.db.prepare("INSERT INTO waypoint_pose_data (x, y, z) VALUES (?, ?, ?)");
+        const edgeStmt = this.db.prepare("INSERT INTO graph_data (id1, id2, edgeWeight) VALUES (?, ?, ?)");
+        
+        // NEW: Prepare statements for all satellite tables.
+        const freeSpaceStmt = this.db.prepare("INSERT INTO free_space_data (id, left_width, right_width) VALUES (?, 0.5, 0.5)");
+        const opInfoStmt = this.db.prepare("INSERT INTO operational_info_table (id, speed, wait, station) VALUES (?, 0.0, 0, 0)");
+        const critPointStmt = this.db.prepare("INSERT INTO critical_points (id, string_trigger) VALUES (?, NULL)");
+        const safetyZoneStmt = this.db.prepare("INSERT INTO safety_zone_table (id) VALUES (?)");
+
         let lastPointRosPos = null;
 
         if (startDbId !== null) {
-            const res = this.db.exec(`SELECT x, y, z FROM waypoints WHERE id = ${startDbId}`);
+            const res = this.db.exec(`SELECT x, y, z FROM waypoint_pose_data WHERE id = ${startDbId}`);
             if (res.length > 0 && res[0].values.length > 0) {
                  lastPointRosPos = { x: res[0].values[0][0], y: res[0].values[0][1], z: res[0].values[0][2] };
             }
@@ -2866,6 +2891,13 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
             const rosPos = this.threeToRos(point.clone().add(this.mapOffset));
             waypointStmt.run([rosPos.x, rosPos.y, rosPos.z]);
             const newPointId = this.db.exec("SELECT last_insert_rowid()")[0].values[0][0];
+            
+            // NEW: Insert default data into all related tables for the new waypoint.
+            freeSpaceStmt.run([newPointId]);
+            opInfoStmt.run([newPointId]);
+            critPointStmt.run([newPointId]);
+            safetyZoneStmt.run([newPointId]);
+
             if (lastPointId !== null && lastPointRosPos !== null) {
                 const weight = Math.sqrt(Math.pow(rosPos.x - lastPointRosPos.x, 2) + Math.pow(rosPos.y - lastPointRosPos.y, 2) + Math.pow(rosPos.z - lastPointRosPos.z, 2));
                 edgeStmt.run([lastPointId, newPointId, weight]);
@@ -2875,7 +2907,7 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
         }
         
         if (endDbId !== null && lastPointId !== null) {
-            const res = this.db.exec(`SELECT x, y, z FROM waypoints WHERE id = ${endDbId}`);
+            const res = this.db.exec(`SELECT x, y, z FROM waypoint_pose_data WHERE id = ${endDbId}`);
             if (res.length > 0 && res[0].values.length > 0) {
                 const endPointRosPos = { x: res[0].values[0][0], y: res[0].values[0][1], z: res[0].values[0][2] };
                 const weight = Math.sqrt(Math.pow(endPointRosPos.x - lastPointRosPos.x, 2) + Math.pow(endPointRosPos.y - lastPointRosPos.y, 2) + Math.pow(endPointRosPos.z - lastPointRosPos.z, 2));
@@ -2885,6 +2917,11 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
 
         waypointStmt.free();
         edgeStmt.free();
+        freeSpaceStmt.free();
+        opInfoStmt.free();
+        critPointStmt.free();
+        safetyZoneStmt.free();
+
         this.db.run("COMMIT");
     } catch (e) {
         console.error("Batch DB insert failed, rolling back.", e);
@@ -2918,7 +2955,7 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
     setEditMode(mode) {
         this.editMode = ['waypoint-edit', 'lane-edit', 'layout-drawings'].includes(mode);
         this.activeTab = mode;
-        console.log(`ðŸ“ Edit mode: ${this.editMode ? 'ON' : 'OFF'}`);
+        console.log(`🎬 Edit mode: ${this.editMode ? 'ON' : 'OFF'}`);
         if (!this.editMode) {
             this.clearSelection();
             this.clearShapeSelection();
@@ -2942,20 +2979,39 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
     }
 
     /**
-     * Marks the currently selected points as two_way=1 in the database.
+     * MODIFIED: Marks the EDGES between selected points as two-way in the graph_data table.
      */
     async markSelectedAsTwoWay() {
-        if (!this.db || this.selectedIndices.size === 0) return;
+        if (!this.db || this.selectedIndices.size < 2) return;
 
-        const idsToUpdate = Array.from(this.selectedIndices).map(index => this.indexToDbId[index]);
-        if (idsToUpdate.length === 0) return;
+        // Get the DB IDs of all selected waypoints
+        const selectedDbIds = new Set(
+            Array.from(this.selectedIndices).map(index => this.indexToDbId[index])
+        );
 
-        const placeholders = idsToUpdate.map(() => '?').join(',');
-        this.db.run(`UPDATE waypoints SET two_way = 1 WHERE id IN (${placeholders})`, idsToUpdate);
+        // Find all edges where BOTH ends are in the selected set
+        const edgesToUpdate = [];
+        const stmt = this.db.prepare("SELECT id, id1, id2 FROM graph_data");
+        while(stmt.step()){
+            const [id, id1, id2] = stmt.get();
+            if (selectedDbIds.has(id1) && selectedDbIds.has(id2)) {
+                edgesToUpdate.push(id);
+            }
+        }
+        stmt.free();
+
+        if (edgesToUpdate.length === 0) {
+            console.log("No internal edges found within the selection to mark as two-way.");
+            return;
+        }
+
+        // Update the direction for the identified edges
+        const placeholders = edgesToUpdate.map(() => '?').join(',');
+        this.db.run(`UPDATE graph_data SET direction = 1 WHERE id IN (${placeholders})`, edgesToUpdate);
 
         this.clearSelection();
-        await this.refreshWaypointsFromDB(); // Reload data to show color change
-        console.log(`âœ… Marked ${idsToUpdate.length} points as two-way.`);
+        await this.refreshWaypointsFromDB(); // Reload data to potentially show a color change in the future
+        console.log(`✅ Marked ${edgesToUpdate.length} edges as two-way.`);
     }
     
 
@@ -2971,10 +3027,10 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
         }
 
         this.activeTool = toolName;
-        console.log(`ðŸ› ï¸ Selected tool: ${toolName}`);
+        console.log(`🛠️ Selected tool: ${toolName}`);
 
         // Remove the 'active' class from all tool buttons
-        const toolButtons = document.querySelectorAll('.tool-button, .tool-button-layout, .action-btn');
+        const toolButtons = document.querySelectorAll('.tool-button, .tool-button-large, .tool-button-layout, .action-btn');
         toolButtons.forEach(btn => btn.classList.remove('active'));
 
         let activeBtn;
@@ -3124,21 +3180,6 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
         this.raycaster.params.Points.threshold = this.dynamicPointSize;
 
         switch (this.activeTool) {
-            case 'add-points':
-                {
-                    let intersectionPoint;
-                    const mapIntersects = this.mapObject ? this.raycaster.intersectObject(this.mapObject) : [];
-                    if (mapIntersects.length > 0) {
-                        intersectionPoint = mapIntersects[0].point;
-                    } else {
-                        const planeIntersect = new THREE.Vector3();
-                        if (this.raycaster.ray.intersectPlane(this.raycastPlane, planeIntersect)) {
-                            intersectionPoint = planeIntersect;
-                        }
-                    }
-                    if (intersectionPoint) this.addPoint(intersectionPoint);
-                }
-                break;
             case 'remove-points':
             case 'move-points':
                 this.handleSelectionPointerDown(clickedIndex, event);
@@ -3256,8 +3297,7 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
     }
 }
 
-    // REPLACE your entire onPointerMove function with this corrected version.
-
+    
     /**
      * Handle pointer move events for drag operations and hover feedback
      * * @param {PointerEvent} event - Pointer move event
@@ -3478,7 +3518,7 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
             return;
         }
     
-        console.log('ðŸš€ Exporting database...');
+        console.log('🚀 Exporting database...');
         this.showLoader();
     
         try {
@@ -3494,11 +3534,11 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
     
-            console.log('ðŸŽ‰ Database exported successfully!');
+            console.log('🎊 Database exported successfully!');
             this.showErrorMessage("Database exported successfully!"); 
     
         } catch (error) {
-            console.error('âŒ Failed to export database:', error);
+            console.error('❌ Failed to export database:', error);
             this.showErrorMessage(`Export failed: ${error.message}`);
         } finally {
             this.hideLoader();
@@ -3623,7 +3663,7 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
             try {
                 for (const file of files) await this.loadPointCloudFile(file);
             } catch (error) {
-                console.error('âŒ Failed to load point cloud:', error);
+                console.error('❌ Failed to load point cloud:', error);
             } finally {
                 this.hideLoader();
                 event.target.value = '';
@@ -3637,7 +3677,7 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
             try {
                 await this.loadWaypointsFromFile(file);
             } catch (error) {
-                console.error('âŒ Failed to load database:', error);
+                console.error('❌ Failed to load database:', error);
             } finally {
                 this.hideLoader();
                 event.target.value = '';
@@ -3661,7 +3701,7 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
         }
 
         // Waypoint editing tools
-        ['add-points', 'draw-points', 'remove-points', 'move-points', 'interpolate', 'two-way'].forEach(tool => {
+        ['draw-points', 'remove-points', 'move-points', 'interpolate', 'two-way'].forEach(tool => {
             document.getElementById(`tool-${tool}`).addEventListener('click', () => this.selectTool(tool));
         });
 
@@ -3872,7 +3912,7 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
      * * @param {string} tabName - Name of tab to switch to
      */
     switchTab(tabName) {
-        console.log(`ðŸ“‘ Switching to tab: ${tabName}`);
+        console.log(`📑 Switching to tab: ${tabName}`);
         this.activeTab = tabName;
         this.clearSelection();
         this.clearShapeSelection();
@@ -3897,7 +3937,7 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
         document.getElementById(`tab-${tabName}`).classList.add('active');
         
         // Clear tool selection
-        document.querySelectorAll('.tool-button, .tool-button-layout').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tool-button, .tool-button-large .tool-button-layout').forEach(b => b.classList.remove('active'));
         this.activeTool = null;
         
         this.updatePanelVisibility(tabName);
@@ -3950,7 +3990,7 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
      */
     showErrorMessage(message) {
         console.error('Error:', message);
-        alert(`Error: ${message}`);
+        //alert(`Error: ${message}`);
     }
 
     /**
@@ -3998,7 +4038,7 @@ function bootstrap() {
 
 // Global error handler
 window.addEventListener('error', (event) => {
-    console.error('ðŸ’¥ ViryaOSLaneStudio error:', event.error);
+    console.error('💥 ViryaOSLaneStudio error:', event.error);
     if (app) {
         app.showErrorMessage(`Unexpected error: ${event.error.message}`);
     }
