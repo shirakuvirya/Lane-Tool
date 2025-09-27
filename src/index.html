@@ -75,9 +75,9 @@
         <div class="tool-section">
             <h4>Edit Tools</h4>
             <div class="tool-grid">
-                <button id="tool-add-points" class="tool-button" title="Add waypoints by clicking on the map">
-                    <span class="tool-icon">➕</span>
-                    Add Points
+                <button id="tool-draw-points" class="tool-button" title="Draw a line of waypoints by dragging (W)">
+                    <span class="tool-icon">✏️</span>
+                    Draw Points
                 </button>
                 <button id="tool-remove-points" class="tool-button" title="Remove waypoints by clicking on them">
                     <span class="tool-icon">🗑️</span>
@@ -91,11 +91,7 @@
                     <span class="tool-icon">📈</span>
                     Interpolate
                 </button>
-                <button id="tool-draw-points" class="tool-button" title="Draw a line of waypoints by dragging (W)">
-                    <span class="tool-icon">✏️</span>
-                    Draw Points
-                </button>
-                <button id="tool-two-way" class="tool-button" title="Mark a path of points as two-way">
+                <button id="tool-two-way" class="tool-button-large" title="Mark a path of points as two-way">
                     <span class="tool-icon">🔄</span>
                     Two Way
                 </button>
@@ -149,7 +145,6 @@
         <div class="tool-section">
             <h4>Keyboard Shortcuts</h4>
             <div class="shortcuts-info">
-                <p><kbd>A</kbd> - Add Points Tool</p>
                 <p><kbd>D</kbd> - Remove Points Tool</p>
                 <p><kbd>M</kbd> - Move Points Tool</p>
                 <p><kbd>I</kbd> - Interpolate Tool</p>
@@ -243,15 +238,13 @@
         <div class="tool-section">
             <h4>Lane Width Editing</h4>
             <div class="actions">
-                <button id="tool-edit-lane" class="action-btn action-gen-lane" 
+                <button id="tool-edit-lane" class="action-btn" 
                         title="Select two waypoints to modify lane width between them">
                     Change Lane Width
                 </button>
             </div>
-            
             <div id="lane-width-editor" class="tool-section hidden">
                 <h4>Segment Width Configuration</h4>
-                
                 <div class="panel-control">
                     <label for="left-lane-width-input">Left Width (m):</label>
                     <div class="stepper-input">
@@ -260,7 +253,6 @@
                         <button id="left-width-increase-btn" title="Increase left width by 0.05m">&plus;</button>
                     </div>
                 </div>
-                
                 <div class="panel-control">
                     <label for="right-lane-width-input">Right Width (m):</label>
                     <div class="stepper-input">
@@ -270,17 +262,70 @@
                     </div>
                 </div>
             </div>
-            
-            <div id="lane-edit-info" class="info-display hidden">
-                </div>
+            <div id="lane-edit-info" class="info-display hidden"></div>
         </div>
-    </div>
+        
+        <div class="tool-section">
+            <h4>Speed Limit Editing</h4>
+            <div class="actions">
+                 <button id="tool-set-speed" class="action-btn" 
+                        title="Set a speed limit for a segment of waypoints">
+                    <span class="tool-icon">  speedometer </span> 
+                    Set Speed
+                </button>
+            </div>
+            <div id="speed-limit-panel" class="tool-section hidden">
+                <p id="speed-limit-info" class="panel-hint">Select a start and end point to define a path.</p>
+                <div class="panel-control" style="margin-top: 15px;">
+                    <label for="speed-limit-input">Speed (m/s):</label>
+                    <input type="number" id="speed-limit-input" value="1.0" step="0.1" style="width: 80px; text-align: center; padding: 5px; background: #1a2332; border: 1px solid #4a5568; color: white; border-radius: 4px;">
+                </div>
+                <div class="actions">
+                    <button id="apply-speed-limit" class="action-btn success" disabled 
+                            title="Apply speed limit to all waypoints in the selected segment">
+                        Apply Speed
+                    </button>
+                </div>
+            </div>
+        </div>
 
+        <div class="tool-section">
+            <h4>Operational Info</h4>
+            <div class="actions">
+                    <button id="tool-set-op-info" class="action-btn" 
+                        title="Set wait times or station names for selected waypoints">
+                    <span class="tool-icon">ℹ️</span>
+                    Set Wait/Station
+                </button>
+            </div>
+            <div id="op-info-panel" class="tool-section hidden">
+                <p id="op-info-info" class="panel-hint">Select one or more waypoints.</p>
+                
+                <div class="panel-control" style="margin-top: 15px;">
+                    <label for="op-info-wait-input">Wait Time (sec):</label>
+                    <input type="number" id="op-info-wait-input" placeholder="e.g., 5" style="width: 100px; text-align: center; padding: 5px; background: #1a2332; border: 1px solid #4a5568; color: white; border-radius: 4px;">
+                </div>
+                <div class="panel-control" style="margin-top: 10px;">
+                    <label for="op-info-station-input">Station Name:</label>
+                    <input type="text" id="op-info-station-input" placeholder="e.g., 'Dock A'" style="width: 100px; text-align: center; padding: 5px; background: #1a2332; border: 1px solid #4a5568; color: white; border-radius: 4px;">
+                </div>
+
+                <div class="actions">
+                    <button id="apply-op-info" class="action-btn success" disabled 
+                            title="Apply these properties to all selected waypoints">
+                        Apply Info
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </div>
+    
     <div id="right-lane-panel" class="side-panel hidden">
         <div class="panel-header">
             <h3>Lane Information</h3>
         </div>
-        </div>
+    </div>
 
     <div id="left-layout-panel" class="side-panel hidden">
         <div class="panel-header">
@@ -302,9 +347,9 @@
                     <span class="tool-icon">⬆️</span>
                     Arrow
                 </button>
-                <button id="tool-add-line" class="tool-button" title="Draw straight lines">
-                    <span class="tool-icon">📏</span>
-                    Line
+                <button id="tool-add-triangle" class="tool-button" title="Draw triangular shapes">
+                    <span class="tool-icon">🔺</span> 
+                    Triangle 
                 </button>
             </div>
             
@@ -343,7 +388,7 @@
                 <div id="shape-style-controls" class="color-palette hidden">
                     <div class="color-control">
                         <label for="fill-color">Fill Color</label>
-                        <input type="color" id="fill-color" value="#4a9eff" 
+                        <input type="color" id="fill-color" value="#ffffff" 
                                title="Change the fill color of the selected shape">
                     </div>
                     <div class="color-control">
@@ -368,13 +413,13 @@
                 <div id="text-style-controls" class="color-palette hidden">
                     <div class="color-control">
                         <label for="text-color">Text Color</label>
-                        <input type="color" id="text-color" value="#ffffff"
+                        <input type="color" id="text-color" value="#FFFF00"
                                title="Change the color of the selected text">
                     </div>
                     <div class="color-control">
                         <label for="text-size">Text Size</label>
                         <div class="slider-container">
-                            <input type="range" id="text-size" min="0.1" max="5" step="0.05" value="0.5"
+                            <input type="range" id="text-size" min="0.1" max="5" step="0.05" value="1.5"
                                    title="Adjust the size of the selected text">
                             <span id="text-size-value">0.50</span>
                         </div>
@@ -405,6 +450,13 @@
             <input type="range" id="voxel-size" min="0.1" max="5" step="0.1" value="1.0"
                    title="Adjust the voxel size multiplier for point cloud rendering">
             <span id="voxel-value">1.0</span>
+        </div>
+
+        <div class="control-group">
+            <label>Measure:</label>
+            <button id="tool-measure-distance" class="action-btn" title="Measure 2D distance between two points">📏 Start</button>
+            <button id="clear-measurement" class="action-btn action-del-lane" title="Clear measurement">Clear</button>
+            <span id="distance-display" style="color: #4a9eff; font-weight: bold; min-width: 80px; text-align: left;">Dist: 0.00m</span>
         </div>
 
         <div class="control-group">
