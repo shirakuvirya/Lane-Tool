@@ -107,7 +107,7 @@ CREATE TABLE IF NOT EXISTS operational_info_table (
     id INTEGER PRIMARY KEY,
     speed REAL DEFAULT 0.0,
     wait INTEGER DEFAULT 0,
-    station INTEGER DEFAULT 0,
+    station TEXT,
     FOREIGN KEY (id) REFERENCES waypoint_pose_data (id) ON DELETE CASCADE
 );`;
 
@@ -156,6 +156,8 @@ class ViryaOSLaneStudio {
         
         /** @type {THREE.Mesh} Visual indicator for point hovering */
         this.hoverIndicator = null;
+
+        this.drawingTrianglePoints = [];
         
         /** @type {THREE.Group} Container for lane geometry meshes */
         this.pathGroup = new THREE.Group();
@@ -240,7 +242,9 @@ class ViryaOSLaneStudio {
         
         /** @type {Array<number>} Selected waypoints for lane editing */
         this.laneEditSelection = [];
-        
+
+        this.speedLimitSelection = []; 
+        this.opInfoSelection = new Set();
         /** @type {Set<number>} Set of selected waypoint indices */
         this.selectedIndices = new Set();
         
@@ -317,6 +321,12 @@ class ViryaOSLaneStudio {
         
         /** @type {THREE.Vector2} Ending point of marquee selection */
         this.marqueeEnd = new THREE.Vector2();
+
+        this.isMeasuring = false;
+        this.measurementStartPoint = null;
+        this.measurementMarkers = []; // <<< ADD THIS LINE
+        this.measurementLine = null;
+
 
         // ====================================================================
         // DATABASE AND PERSISTENCE
@@ -595,9 +605,11 @@ class ViryaOSLaneStudio {
                 shape.lineTo(headW, halfHeight - headH);
                 shape.closePath();
                 break;
-            case 'line':
-                shape.moveTo(-halfWidth, 0.5);
-                shape.lineTo(halfWidth, 0.5);
+            case 'triangle':
+                shape.moveTo(0, 0.5);
+                shape.lineTo(0.5, -0.5);
+                shape.lineTo(-0.5, -0.5);
+                shape.closePath();
                 break;
             default: 
                 return null;
@@ -2000,6 +2012,90 @@ findPathsToNearestJunctions(junctionId, adj) {
         }
     }
 
+    // Add these four new methods to the ViryaOSLaneStudio class
+
+    /**
+     * Toggles the distance measurement mode on and off.
+     */
+    toggleMeasurement() {
+        this.isMeasuring = !this.isMeasuring;
+        const measureBtn = document.getElementById('tool-measure-distance');
+        
+        if (this.isMeasuring) {
+            this.clearMeasurement(); // Clear any previous measurement
+            this.controls.enabled = false;
+            measureBtn.classList.add('active');
+            measureBtn.innerHTML = '📏 Cancel';
+            document.getElementById('app').style.cursor = 'crosshair';
+        } else {
+            this.controls.enabled = true;
+            measureBtn.classList.remove('active');
+            measureBtn.innerHTML = '📏 Start';
+            document.getElementById('app').style.cursor = 'default';
+            this.clearMeasurement();
+        }
+    }
+
+    /**
+     * Clears any active measurement visuals and resets the state.
+     */
+    clearMeasurement() {
+        this.measurementStartPoint = null;
+        document.getElementById('distance-display').textContent = 'Dist: 0.00m';
+        
+        if (this.measurementLine) {
+            this.scene.remove(this.measurementLine);
+            this.measurementLine.geometry.dispose();
+            this.measurementLine.material.dispose();
+            this.measurementLine = null;
+        }
+        this.measurementMarkers.forEach(marker => {
+            this.scene.remove(marker);
+            marker.geometry.dispose();
+            marker.material.dispose();
+        });
+        this.measurementMarkers = [];
+    }
+    
+    /**
+     * Handles clicks during measurement mode to define points and calculate distance.
+     * @param {THREE.Vector3} point - The 3D point where the user clicked.
+     */
+    handleMeasurementClick(point) {
+        // Add a visual marker for the click
+        const markerGeo = new THREE.SphereGeometry(this.dynamicPointSize * 1.5, 16, 16);
+        const markerMat = new THREE.MeshBasicMaterial({ color: 0xff00ff, depthTest: false });
+        const marker = new THREE.Mesh(markerGeo, markerMat);
+        marker.position.copy(point);
+        this.scene.add(marker);
+        this.measurementMarkers.push(marker);
+
+        if (!this.measurementStartPoint) {
+            // This is the first click, set the start point
+            this.measurementStartPoint = point.clone();
+        } else {
+            // This is the second click, calculate and display the distance
+            const startVec2 = new THREE.Vector2(this.measurementStartPoint.x, this.measurementStartPoint.y);
+            const endVec2 = new THREE.Vector2(point.x, point.y);
+            const distance = startVec2.distanceTo(endVec2);
+
+            document.getElementById('distance-display').textContent = `Dist: ${distance.toFixed(2)}m`;
+
+            // Draw a line connecting the two points
+            const lineMat = new THREE.LineBasicMaterial({ color: 0xff00ff, depthTest: false, linewidth: 2 });
+            const lineGeo = new THREE.BufferGeometry().setFromPoints([this.measurementStartPoint, point]);
+            this.measurementLine = new THREE.Line(lineGeo, lineMat);
+            this.scene.add(this.measurementLine);
+
+            // End measurement mode
+            this.isMeasuring = false;
+            this.controls.enabled = true;
+            document.getElementById('tool-measure-distance').classList.remove('active');
+            document.getElementById('tool-measure-distance').innerHTML = '📏 Start';
+            document.getElementById('app').style.cursor = 'default';
+        }
+    }
+
 
     /**
      * Refresh waypoint visualization from database
@@ -2523,9 +2619,170 @@ findPathsToNearestJunctions(junctionId, adj) {
         }
     }
 
+    // Add these three new methods to the ViryaOSLaneStudio class
+
+    /**
+     * Updates the speed limit panel UI based on the current selection.
+     */
+    updateSpeedLimitPanel() {
+        const panel = document.getElementById('speed-limit-panel');
+        const infoText = document.getElementById('speed-limit-info');
+        const applyBtn = document.getElementById('apply-speed-limit');
+
+        if (this.activeTool !== 'set-speed') {
+            panel.classList.add('hidden');
+            return;
+        }
+
+        panel.classList.remove('hidden');
+
+        if (this.speedLimitSelection.length === 0) {
+            infoText.textContent = 'Select a start point for the segment.';
+        } else if (this.speedLimitSelection.length === 1) {
+            const dbId = this.indexToDbId[this.speedLimitSelection[0]];
+            infoText.textContent = `Start point ID ${dbId} selected. Select an end point.`;
+        } else if (this.speedLimitSelection.length === 2) {
+            const dbId1 = this.indexToDbId[this.speedLimitSelection[0]];
+            const dbId2 = this.indexToDbId[this.speedLimitSelection[1]];
+            infoText.textContent = `Segment selected between ID ${dbId1} and ${dbId2}. Ready to apply speed.`;
+        }
+
+        applyBtn.disabled = this.speedLimitSelection.length !== 2;
+    }
+
+    /**
+     * Applies the specified speed limit to all waypoints between the two selected points.
+     * @async
+     */
+    async applySpeedLimit() {
+        if (!this.db || this.speedLimitSelection.length !== 2) return;
+
+        const speedInput = document.getElementById('speed-limit-input');
+        const speed = parseFloat(speedInput.value);
+
+        if (isNaN(speed)) {
+            alert("Invalid speed value.");
+            return;
+        }
+
+        // Determine the start and end indices of the segment
+        const index1 = this.speedLimitSelection[0];
+        const index2 = this.speedLimitSelection[1];
+        const startIdx = Math.min(index1, index2);
+        const endIdx = Math.max(index1, index2);
+
+        // Collect all database IDs within that range
+        const idsToUpdate = [];
+        for (let i = startIdx; i <= endIdx; i++) {
+            idsToUpdate.push(this.indexToDbId[i]);
+        }
+
+        if (idsToUpdate.length === 0) return;
+
+        console.log(`Applying speed ${speed} m/s to ${idsToUpdate.length} waypoints.`);
+        this.showLoader();
+
+        try {
+            const placeholders = idsToUpdate.map(() => '?').join(',');
+            const sql = `UPDATE operational_info_table SET speed = ? WHERE id IN (${placeholders})`;
+            
+            // The first parameter is the speed, the rest are the IDs
+            this.db.run(sql, [speed, ...idsToUpdate]);
+            
+            console.log("✅ Speed limit update successful.");
+        } catch (error) {
+            console.error("❌ Failed to update speed limits:", error);
+            this.showErrorMessage("Failed to update speed limits in the database.");
+        } finally {
+            this.hideLoader();
+            this.speedLimitSelection = [];
+            this.updateSpeedLimitPanel();
+        }
+    }
+
     // ====================================================================
     // SELECTION MANAGEMENT
     // ====================================================================
+
+    // Add these three new methods to the ViryaOSLaneStudio class
+
+    /**
+     * Updates the Operational Info panel UI based on the current selection.
+     */
+    updateOpInfoPanel() {
+        const panel = document.getElementById('op-info-panel');
+        const infoText = document.getElementById('op-info-info');
+        const applyBtn = document.getElementById('apply-op-info');
+
+        if (this.activeTool !== 'set-op-info') {
+            panel.classList.add('hidden');
+            return;
+        }
+
+        panel.classList.remove('hidden');
+        const selectionSize = this.opInfoSelection.size;
+        
+        if (selectionSize === 0) {
+            infoText.textContent = 'Select one or more waypoints.';
+        } else {
+            infoText.textContent = `${selectionSize} waypoint(s) selected.`;
+        }
+
+        applyBtn.disabled = selectionSize === 0;
+    }
+
+    /**
+     * Applies wait time and/or station name to selected waypoints.
+     * @async
+     */
+    async applyOpInfo() {
+        if (!this.db || this.opInfoSelection.size === 0) return;
+
+        const waitInput = document.getElementById('op-info-wait-input');
+        const stationInput = document.getElementById('op-info-station-input');
+
+        const waitValue = waitInput.value.trim();
+        const stationValue = stationInput.value.trim();
+
+        if (waitValue === '' && stationValue === '') {
+            alert("Please enter a wait time or a station name.");
+            return;
+        }
+
+        const idsToUpdate = Array.from(this.opInfoSelection).map(index => this.indexToDbId[index]);
+        if (idsToUpdate.length === 0) return;
+
+        this.showLoader();
+        try {
+            const setClauses = [];
+            const params = [];
+
+            if (waitValue !== '') {
+                setClauses.push('wait = ?');
+                params.push(parseInt(waitValue, 10));
+            }
+            if (stationValue !== '') {
+                setClauses.push('station = ?');
+                params.push(stationValue);
+            }
+
+            const placeholders = idsToUpdate.map(() => '?').join(',');
+            const sql = `UPDATE operational_info_table SET ${setClauses.join(', ')} WHERE id IN (${placeholders})`;
+            
+            this.db.run(sql, [...params, ...idsToUpdate]);
+            
+            console.log(`✅ Updated operational info for ${idsToUpdate.length} waypoints.`);
+            waitInput.value = '';
+            stationInput.value = '';
+        } catch (error) {
+            console.error("❌ Failed to update operational info:", error);
+            this.showErrorMessage("Database update failed.");
+        } finally {
+            this.hideLoader();
+            this.clearSelection(); // This will also clear opInfoSelection
+            this.updateOpInfoPanel();
+        }
+    }
 
     /**
      * Clear all waypoint selections
@@ -2534,11 +2791,15 @@ findPathsToNearestJunctions(junctionId, adj) {
         this.selectedIndices.clear();
         this.pathSelectionStartIndex = null;
         this.laneEditSelection = [];
+        this.speedLimitSelection = [];
+        this.opInfoSelection.clear(); // ADD THIS LINE
         this.updateAllColors();
         this.updateInfoPanel();
         this.updateInterpolationPanel();
-        this.updateTwoWayPanel(); 
+        this.updateTwoWayPanel();
         this.updateDeletePanel();
+        this.updateSpeedLimitPanel();
+        this.updateOpInfoPanel(); // ADD THIS LINE
     }
 
     /**
@@ -3055,7 +3316,7 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
             document.getElementById('app').style.cursor = 'default';
         }
 
-        if (!['square', 'oval', 'arrow', 'line', 'insert-text'].includes(toolName)) {
+        if (!['square', 'oval', 'arrow', 'triangle', 'insert-text'].includes(toolName)) {
             this.isDrawing = false;
         }
 
@@ -3113,6 +3374,19 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
      */
     async onPointerDown(event) {
     if (!this.camera) return;
+    
+    if (this.isMeasuring) {
+        const coords = this.getPointerCoordinates(event);
+        this.pointer.copy(coords);
+        this.raycaster.setFromCamera(this.pointer, this.camera);
+        
+        const intersection = new THREE.Vector3();
+        // Use the ground plane for consistent 2D measurement
+        if (this.raycaster.ray.intersectPlane(this.raycastPlane, intersection)) {
+            this.handleMeasurementClick(intersection);
+        }
+        return; // Stop further processing
+    }
 
     // This block handles only the "Persistent Drawing" mode and should be at the top.
     if (this.isPersistentDrawing) {
@@ -3175,57 +3449,72 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
     this.transformStartPos.set(event.clientX, event.clientY);
 
     if (this.activeTab === 'waypoint-edit') {
-        // NOTE: The redundant 'isPersistentDrawing' block has been removed from here.
-        const clickedIndex = this.findClosestPoint(event);
         this.raycaster.params.Points.threshold = this.dynamicPointSize;
 
-        switch (this.activeTool) {
-            case 'remove-points':
-            case 'move-points':
+    // Always allow point selection in this tab
+    this.handleSelectionPointerDown(clickedIndex, event);
+
+    // Then, handle tool-specific logic
+    switch (this.activeTool) {
+        case 'interpolate':
+            if (clickedIndex !== -1) {
+                if (this.pathSelectionStartIndex === null) {
+                    this.pathSelectionStartIndex = clickedIndex;
+                } else {
+                    const start = Math.min(this.pathSelectionStartIndex, clickedIndex);
+                    const end = Math.max(this.pathSelectionStartIndex, clickedIndex);
+                    for (let i = start; i <= end; i++) this.selectedIndices.add(i);
+                    this.pathSelectionStartIndex = null;
+                }
+                this.updateAllColors();
+                this.updateInterpolationPanel();
+            }
+            break;
+        case 'two-way':
+             if (clickedIndex !== -1) {
+                if (this.pathSelectionStartIndex === null) {
+                    this.pathSelectionStartIndex = clickedIndex;
+                } else {
+                    const start = Math.min(this.pathSelectionStartIndex, clickedIndex);
+                    const end = Math.max(this.pathSelectionStartIndex, clickedIndex);
+                    for (let i = start; i <= end; i++) this.selectedIndices.add(i);
+                    this.pathSelectionStartIndex = null;
+                }
+                this.updateAllColors();
+                this.updateTwoWayPanel();
+            }
+            break;
+        case 'remove-points':
+        case 'move-points':
                 this.handleSelectionPointerDown(clickedIndex, event);
                 break;
-            case 'interpolate':
-                if (clickedIndex !== -1) {
-                    if (this.pathSelectionStartIndex === null) {
-                        document.getElementById('interpolation-panel').classList.remove('hidden');
-                        this.clearSelection();
-                        this.pathSelectionStartIndex = clickedIndex;
-                        this.selectedIndices.add(clickedIndex);
-                    } else {
-                        const start = Math.min(this.pathSelectionStartIndex, clickedIndex);
-                        const end = Math.max(this.pathSelectionStartIndex, clickedIndex);
-                        for (let i = start; i <= end; i++) this.selectedIndices.add(i);
-                        this.pathSelectionStartIndex = null;
-                    }
-                    this.updateAllColors();
-                    this.updateInterpolationPanel();
-                } else {
-                    this.clearSelection();
-                }
-                break;
-            case 'two-way':
-                 if (clickedIndex !== -1) {
-                    if (this.pathSelectionStartIndex === null) {
-                        document.getElementById('two-way-panel').classList.remove('hidden');
-                        this.clearSelection();
-                        this.pathSelectionStartIndex = clickedIndex;
-                        this.selectedIndices.add(clickedIndex);
-                    } else {
-                        const start = Math.min(this.pathSelectionStartIndex, clickedIndex);
-                        const end = Math.max(this.pathSelectionStartIndex, clickedIndex);
-                        for (let i = start; i <= end; i++) this.selectedIndices.add(i);
-                        this.pathSelectionStartIndex = null;
-                    }
-                    this.updateAllColors();
-                    this.updateTwoWayPanel();
-                } else {
-                    this.clearSelection();
-                }
-                break;
-        }
+
+    }
+
     } else if (this.activeTab === 'lane-edit') {
-         const clickedIndex = this.findClosestPoint(event);
-         if (clickedIndex !== -1) {
+        const clickedIndex = this.findClosestPoint(event);
+        if (clickedIndex === -1) {
+            this.speedLimitSelection = [];
+            this.updateSpeedLimitPanel();
+            return;
+        }
+
+        if (this.activeTool === 'set-speed') {
+            if (this.speedLimitSelection.length >= 2) {
+                this.speedLimitSelection = []; // Start a new selection
+            }
+            this.speedLimitSelection.push(clickedIndex);
+            this.updateAllColors();
+            this.updateSpeedLimitPanel();
+        }else if (this.activeTool === 'set-op-info') { // ADD THIS BLOCK
+            if (this.opInfoSelection.has(clickedIndex)) {
+                this.opInfoSelection.delete(clickedIndex); // Deselect if already selected
+            } else {
+                this.opInfoSelection.add(clickedIndex); // Select
+            }
+            this.updateAllColors();
+            this.updateOpInfoPanel();
+        }else { // Default behavior for the tab is lane width editing
             if (this.laneEditSelection.length < 2 && !this.laneEditSelection.includes(clickedIndex)) {
                 this.laneEditSelection.push(clickedIndex);
             } else {
@@ -3273,12 +3562,54 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
             return;
         }
 
-        if (['square', 'oval', 'arrow', 'line'].includes(this.activeTool)) {
+        if (['square', 'oval', 'arrow'].includes(this.activeTool)) {
             const point = new THREE.Vector3();
             if (this.raycaster.ray.intersectPlane(this.raycastPlane, point)) {
                 this.drawStartPoint.copy(point);
                 this.isDrawing = true;
                 this.controls.enabled = false;
+            }
+            return;
+        }
+
+         if (this.activeTool === 'triangle') {
+            const point = new THREE.Vector3();
+            if (this.raycaster.ray.intersectPlane(this.raycastPlane, point)) {
+                this.drawingTrianglePoints.push(point);
+
+                if (this.drawingTrianglePoints.length === 3) {
+                    // Finalize the triangle
+                    const [p1, p2, p3] = this.drawingTrianglePoints;
+                    const shape = new THREE.Shape();
+                    shape.moveTo(p1.x, p1.y);
+                    shape.lineTo(p2.x, p2.y);
+                    shape.lineTo(p3.x, p3.y);
+                    shape.closePath();
+
+                    const geometry = new THREE.ShapeGeometry(shape);
+                    const material = new THREE.MeshBasicMaterial({
+                        color: document.getElementById('fill-color')?.value || '#ffffff',
+                        transparent: true,
+                        opacity: parseFloat(document.getElementById('shape-opacity')?.value || '0.7'),
+                        side: THREE.DoubleSide
+                    });
+
+                    const triangleMesh = new THREE.Mesh(geometry, material);
+                    triangleMesh.position.z = -0.001;
+                    triangleMesh.userData = { type: 'triangle', isShape: true };
+                    
+                    this.shapes.push(triangleMesh);
+                    this.shapeGroup.add(triangleMesh);
+
+                    // Clean up
+                    this.drawingTrianglePoints = [];
+                    if (this.ghostShape) {
+                        this.shapeGroup.remove(this.ghostShape);
+                        this.ghostShape.geometry.dispose();
+                        this.ghostShape.material.dispose();
+                        this.ghostShape = null;
+                    }
+                }
             }
             return;
         }
@@ -3419,13 +3750,18 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
         }
 
         if (this.isDrawing) {
+            if (this.activeTool === 'triangle' && this.drawingTrianglePoints.length > 0) {
             if (this.ghostShape) {
                 this.shapeGroup.remove(this.ghostShape);
                 this.ghostShape.geometry.dispose();
                 this.ghostShape.material.dispose();
             }
-            this.ghostShape = this.addShape(this.activeTool, this.drawStartPoint, currentPoint, true);
-            return;
+
+            const points = [...this.drawingTrianglePoints, currentPoint];
+            const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
+            const lineMat = new THREE.LineBasicMaterial({ color: 0xffff00, depthTest: false });
+            this.ghostShape = new THREE.Line(lineGeo, lineMat);
+            this.shapeGroup.add(this.ghostShape);
         }
 
         this.handleHover(event);
@@ -3447,6 +3783,7 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
             }
             this.updateSelectionFromMarquee();
         }
+    }
     }
     /**
      * Handle pointer up events to finalize interactions
@@ -3734,8 +4071,26 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
         // Lane editing tools
         document.getElementById('generate-lane').addEventListener('click', () => this.generateLane());
         document.getElementById('delete-lane').addEventListener('click', () => this.clearLane());
-        document.getElementById('tool-edit-lane').addEventListener('click', () => this.selectTool('edit-lane'));
 
+        // This handles both tool buttons in the lane edit panel more safely
+        ['edit-lane', 'set-speed', 'set-op-info'].forEach(toolName => { // ADD 'set-op-info' HERE
+        const button = document.getElementById(`tool-${toolName}`);
+        if (button) { 
+            button.addEventListener('click', () => this.selectTool(toolName));
+        } else {
+            console.warn(`Initialization warning: Button with ID 'tool-${toolName}' was not found in your HTML.`);
+        }
+    });
+
+        // Listener for the speed panel's apply button
+        const applyOpInfoButton = document.getElementById('apply-op-info');
+        if (applyOpInfoButton) {
+            applyOpInfoButton.addEventListener('click', () => this.applyOpInfo());
+        }
+        const applySpeedButton = document.getElementById('apply-speed-limit');
+        if (applySpeedButton) {
+            applySpeedButton.addEventListener('click', () => this.applySpeedLimit());
+        }
 
         // Lane width controls
         ['left', 'right'].forEach(side => {
@@ -3750,6 +4105,7 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
             });
             input.addEventListener('change', () => this.applyAndRegenerateLaneWidth(side));
         });
+
 
 
         document.getElementById('generate-turn').addEventListener('click', () => this.generateturn());
@@ -3794,7 +4150,7 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
             'tool-add-square': 'square',
             'tool-add-oval': 'oval',
             'tool-add-arrow': 'arrow',
-            'tool-add-line': 'line',
+            'tool-add-triangle': 'triangle',
             'layout-insert-text': 'insert-text',
             'tool-select-shape': 'select-shape',
             'layout-delete-element': 'delete-element',
@@ -3873,6 +4229,11 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
             if (e.key === 'Escape') document.getElementById('text-input-cancel').click();
         });
 
+
+        document.getElementById('tool-measure-distance').addEventListener('click', () => this.toggleMeasurement());
+        document.getElementById('clear-measurement').addEventListener('click', () => this.clearMeasurement());
+
+
         // Global event listeners
         this.renderer.domElement.addEventListener('pointerdown', this.onPointerDown.bind(this), true);
         this.renderer.domElement.addEventListener('pointermove', this.onPointerMove.bind(this));
@@ -3917,17 +4278,6 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
         this.clearSelection();
         this.clearShapeSelection();
         this.setEditMode(tabName);
-        const waypointInfoPanel = document.getElementById('waypoint-info');
-        if (waypointInfoPanel) {
-            if (tabName === 'waypoint-edit') {
-                waypointInfoPanel.classList.remove('hidden');
-                // Immediately update the panel to reflect the current selection
-                this.updateInfoPanel();
-            } else {
-                waypointInfoPanel.classList.add('hidden');
-            }
-        }
-        // NEW: Ensure we exit persistent drawing mode when switching tabs.
         if (this.isPersistentDrawing) {
             this.exitPersistentDrawing();
         }
