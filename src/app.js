@@ -255,7 +255,7 @@ class ViryaOSLaneStudio {
         this.indexToDbId = [];
         
         /** @type {number} Dynamic point size based on camera distance */
-        this.dynamicPointSize = 0.05;
+        this.dynamicPointSize = 0.3;
         
         /** @type {THREE.Vector3} Offset for coordinate system alignment */
         this.mapOffset = new THREE.Vector3();
@@ -943,9 +943,11 @@ class ViryaOSLaneStudio {
 
     confirmDelete(){
         this.deleteSelectedPoints();
+        this.deleteSelectedShape(); // <<< ADD THIS LINE
         const modal = document.getElementById('delete-confirm');
         modal.classList.add('hidden');
     }
+
 
     cancelDelete(){
         const modal = document.getElementById('delete-confirm');
@@ -1834,7 +1836,6 @@ findPathsToNearestJunctions(junctionId, adj) {
             this.controls.maxPolarAngle = Math.PI;
         }
 
-        this.dynamicPointSize = Math.max(maxDim / 800, 0.02);
         this.updateWaypointVisuals();
     }
 
@@ -1941,7 +1942,7 @@ findPathsToNearestJunctions(junctionId, adj) {
 
                     this.originalMapGeometry = geometry.clone();
                     const material = new THREE.PointsMaterial({
-                        size: 0.5,
+                        size: 0.05,
                         vertexColors: this.originalMapGeometry.attributes.color !== undefined
                     });
 
@@ -2213,7 +2214,7 @@ findPathsToNearestJunctions(junctionId, adj) {
             y: -(mouse.y / rect.height) * 2 + 1
         };
 
-        this.raycaster.params.Points.threshold = this.dynamicPointSize * 5; // A generous radius
+        this.raycaster.params.Points.threshold = this.dynamicPointSize * 1.5; // waypoint selection rad
         this.raycaster.setFromCamera(pointerNDC, this.camera);
 
         const intersects = this.raycaster.intersectObject(this.waypointsObject);
@@ -2886,9 +2887,9 @@ findPathsToNearestJunctions(junctionId, adj) {
 
         const positions = this.waypointsObject.geometry.attributes.position;
         const tempVec = new THREE.Vector3();
-
-        this.clearSelection();
-
+        
+        // This is the corrected logic
+        const pointsInBox = new Set();
         for (let i = 0; i < positions.count; i++) {
             tempVec.fromBufferAttribute(positions, i);
             tempVec.project(this.camera);
@@ -2897,9 +2898,12 @@ findPathsToNearestJunctions(junctionId, adj) {
             const screenY = (-tempVec.y * 0.5 + 0.5) * rect.height;
 
             if (screenX >= boxMinX && screenX <= boxMaxX && screenY >= boxMinY && screenY <= boxMaxY) {
-                this.selectedIndices.add(i);
+                pointsInBox.add(i);
             }
         }
+        
+        // Replace the old selection with the new one
+        this.selectedIndices = pointsInBox;
 
         this.updateAllColors();
     }
@@ -3367,266 +3371,282 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
         }
     }
     
-
     /**
      * Handle pointer down events for interaction initiation
      * * @param {PointerEvent} event - Pointer down event
      */
     async onPointerDown(event) {
-    if (!this.camera) return;
-    
-    if (this.isMeasuring) {
-        const coords = this.getPointerCoordinates(event);
-        this.pointer.copy(coords);
-        this.raycaster.setFromCamera(this.pointer, this.camera);
+        if (!this.camera) return;
         
-        const intersection = new THREE.Vector3();
-        // Use the ground plane for consistent 2D measurement
-        if (this.raycaster.ray.intersectPlane(this.raycastPlane, intersection)) {
-            this.handleMeasurementClick(intersection);
-        }
-        return; // Stop further processing
-    }
-
-    // This block handles only the "Persistent Drawing" mode and should be at the top.
-    if (this.isPersistentDrawing) {
-        const coords = this.getPointerCoordinates(event);
-        this.pointer.copy(coords);
-        this.raycaster.setFromCamera(this.pointer, this.camera);
-
-        let intersectionPoint;
-        let targetDbId = null;
-
-        // Check if the user clicked on an existing point
-        const clickedIndex = this.findClosestPoint(event);
-        if (clickedIndex !== -1) {
-            // If so, use that point's data
-            const positions = this.waypointsObject.geometry.attributes.position;
-            intersectionPoint = new THREE.Vector3().fromBufferAttribute(positions, clickedIndex);
-            targetDbId = this.indexToDbId[clickedIndex];
-        } else {
-            // Otherwise, find the intersection on the map or a virtual plane
-            const mapIntersects = this.mapObject ? this.raycaster.intersectObject(this.mapObject) : [];
-            if (mapIntersects.length > 0) {
-                intersectionPoint = mapIntersects[0].point;
-            } else {
-                const planeIntersect = new THREE.Vector3();
-                if (this.raycaster.ray.intersectPlane(this.raycastPlane, planeIntersect)) {
-                    intersectionPoint = planeIntersect;
-                }
+        if (this.isMeasuring) {
+            const coords = this.getPointerCoordinates(event);
+            this.pointer.copy(coords);
+            this.raycaster.setFromCamera(this.pointer, this.camera);
+            
+            const intersection = new THREE.Vector3();
+            // Use the ground plane for consistent 2D measurement
+            if (this.raycaster.ray.intersectPlane(this.raycastPlane, intersection)) {
+                this.handleMeasurementClick(intersection);
             }
+            return; // Stop further processing
         }
-        
-        if (!intersectionPoint) return; // Exit if no valid click location is found
 
-        if (!this.isDrawingPoints) {
-            // This is the VERY FIRST click of a new drawing session
-            this.drawPointsStartPoint.copy(intersectionPoint);
+        // This block handles only the "Persistent Drawing" mode and should be at the top.
+        if (this.isPersistentDrawing) {
+            const coords = this.getPointerCoordinates(event);
+            this.pointer.copy(coords);
+            this.raycaster.setFromCamera(this.pointer, this.camera);
+
+            let intersectionPoint;
+            let targetDbId = null;
+
+            // Check if the user clicked on an existing point
+            const clickedIndex = this.findClosestPoint(event);
             if (clickedIndex !== -1) {
-               this.drawPointsStartDbId = targetDbId;
+                // If so, use that point's data
+                const positions = this.waypointsObject.geometry.attributes.position;
+                intersectionPoint = new THREE.Vector3().fromBufferAttribute(positions, clickedIndex);
+                targetDbId = this.indexToDbId[clickedIndex];
             } else {
-               // Create the first point if the click is in empty space
-               const firstId = await this.batchAddPoints([intersectionPoint], null);
-               this.drawPointsStartDbId = firstId;
-            }
-            this.isDrawingPoints = true;
-        } else {
-            // This is for all subsequent clicks in a drawing session
-            const lastAddedId = await this.drawPoints(this.drawPointsStartPoint, intersectionPoint, this.drawPointsStartDbId, targetDbId);
-            
-            // --- STATE MANAGEMENT FIX ---
-            // The new "start point" for the next segment is always the point we just clicked on.
-            this.drawPointsStartPoint.copy(intersectionPoint);
-            // The new "start ID" is the ID of the point we clicked on (targetDbId) if it exists,
-            // otherwise it's the ID of the last new point we created (lastAddedId).
-            this.drawPointsStartDbId = targetDbId !== null ? targetDbId : lastAddedId;
-        }
-        return; // End the function here for persistent drawing mode
-    }
-
-    // --- The rest of the logic for other tools and tabs follows here ---
-
-    this.transformStartPos.set(event.clientX, event.clientY);
-
-    if (this.activeTab === 'waypoint-edit') {
-        this.raycaster.params.Points.threshold = this.dynamicPointSize;
-
-    // Always allow point selection in this tab
-    this.handleSelectionPointerDown(clickedIndex, event);
-
-    // Then, handle tool-specific logic
-    switch (this.activeTool) {
-        case 'interpolate':
-            if (clickedIndex !== -1) {
-                if (this.pathSelectionStartIndex === null) {
-                    this.pathSelectionStartIndex = clickedIndex;
+                // Otherwise, find the intersection on the map or a virtual plane
+                const mapIntersects = this.mapObject ? this.raycaster.intersectObject(this.mapObject) : [];
+                if (mapIntersects.length > 0) {
+                    intersectionPoint = mapIntersects[0].point;
                 } else {
-                    const start = Math.min(this.pathSelectionStartIndex, clickedIndex);
-                    const end = Math.max(this.pathSelectionStartIndex, clickedIndex);
-                    for (let i = start; i <= end; i++) this.selectedIndices.add(i);
-                    this.pathSelectionStartIndex = null;
-                }
-                this.updateAllColors();
-                this.updateInterpolationPanel();
-            }
-            break;
-        case 'two-way':
-             if (clickedIndex !== -1) {
-                if (this.pathSelectionStartIndex === null) {
-                    this.pathSelectionStartIndex = clickedIndex;
-                } else {
-                    const start = Math.min(this.pathSelectionStartIndex, clickedIndex);
-                    const end = Math.max(this.pathSelectionStartIndex, clickedIndex);
-                    for (let i = start; i <= end; i++) this.selectedIndices.add(i);
-                    this.pathSelectionStartIndex = null;
-                }
-                this.updateAllColors();
-                this.updateTwoWayPanel();
-            }
-            break;
-        case 'remove-points':
-        case 'move-points':
-                this.handleSelectionPointerDown(clickedIndex, event);
-                break;
-
-    }
-
-    } else if (this.activeTab === 'lane-edit') {
-        const clickedIndex = this.findClosestPoint(event);
-        if (clickedIndex === -1) {
-            this.speedLimitSelection = [];
-            this.updateSpeedLimitPanel();
-            return;
-        }
-
-        if (this.activeTool === 'set-speed') {
-            if (this.speedLimitSelection.length >= 2) {
-                this.speedLimitSelection = []; // Start a new selection
-            }
-            this.speedLimitSelection.push(clickedIndex);
-            this.updateAllColors();
-            this.updateSpeedLimitPanel();
-        }else if (this.activeTool === 'set-op-info') { // ADD THIS BLOCK
-            if (this.opInfoSelection.has(clickedIndex)) {
-                this.opInfoSelection.delete(clickedIndex); // Deselect if already selected
-            } else {
-                this.opInfoSelection.add(clickedIndex); // Select
-            }
-            this.updateAllColors();
-            this.updateOpInfoPanel();
-        }else { // Default behavior for the tab is lane width editing
-            if (this.laneEditSelection.length < 2 && !this.laneEditSelection.includes(clickedIndex)) {
-                this.laneEditSelection.push(clickedIndex);
-            } else {
-                this.laneEditSelection = [clickedIndex];
-            }
-            this.updateLaneEditInfo();
-        }
-    } else if (this.activeTab === 'layout-drawings') {
-        // Layout drawings interaction logic (unchanged)
-        const handleIntersects = this.raycaster.intersectObjects(this.resizeHandles);
-        const shapeIntersects = this.raycaster.intersectObjects(this.shapes);
-
-        if (handleIntersects.length > 0) {
-            const handle = handleIntersects[0].object;
-            this.isResizingShape = true;
-            this.activeHandle = handle;
-            this.controls.enabled = false;
-            
-            const shape = handle.userData.parentShape;
-            const planeIntersect = new THREE.Vector3();
-            this.raycaster.ray.intersectPlane(this.raycastPlane, planeIntersect);
-            
-            this.shapeStartTransform = {
-                position: shape.position.clone(),
-                scale: shape.scale.clone(),
-                startDragPoint: planeIntersect.clone(),
-                initialSize: new THREE.Box3().setFromObject(shape).getSize(new THREE.Vector3())
-            };
-            return;
-        }
-
-        if (shapeIntersects.length > 0) {
-            const shape = shapeIntersects[0].object;
-            this.selectShape(shape);
-            this.isMovingShape = true;
-            this.controls.enabled = false;
-            
-            const planeIntersect = new THREE.Vector3();
-            this.raycaster.ray.intersectPlane(this.raycastPlane, planeIntersect);
-
-            this.shapeStartTransform = {
-                position: shape.position.clone(),
-                offset: shape.position.clone().sub(planeIntersect)
-            };
-            return;
-        }
-
-        if (['square', 'oval', 'arrow'].includes(this.activeTool)) {
-            const point = new THREE.Vector3();
-            if (this.raycaster.ray.intersectPlane(this.raycastPlane, point)) {
-                this.drawStartPoint.copy(point);
-                this.isDrawing = true;
-                this.controls.enabled = false;
-            }
-            return;
-        }
-
-         if (this.activeTool === 'triangle') {
-            const point = new THREE.Vector3();
-            if (this.raycaster.ray.intersectPlane(this.raycastPlane, point)) {
-                this.drawingTrianglePoints.push(point);
-
-                if (this.drawingTrianglePoints.length === 3) {
-                    // Finalize the triangle
-                    const [p1, p2, p3] = this.drawingTrianglePoints;
-                    const shape = new THREE.Shape();
-                    shape.moveTo(p1.x, p1.y);
-                    shape.lineTo(p2.x, p2.y);
-                    shape.lineTo(p3.x, p3.y);
-                    shape.closePath();
-
-                    const geometry = new THREE.ShapeGeometry(shape);
-                    const material = new THREE.MeshBasicMaterial({
-                        color: document.getElementById('fill-color')?.value || '#ffffff',
-                        transparent: true,
-                        opacity: parseFloat(document.getElementById('shape-opacity')?.value || '0.7'),
-                        side: THREE.DoubleSide
-                    });
-
-                    const triangleMesh = new THREE.Mesh(geometry, material);
-                    triangleMesh.position.z = -0.001;
-                    triangleMesh.userData = { type: 'triangle', isShape: true };
-                    
-                    this.shapes.push(triangleMesh);
-                    this.shapeGroup.add(triangleMesh);
-
-                    // Clean up
-                    this.drawingTrianglePoints = [];
-                    if (this.ghostShape) {
-                        this.shapeGroup.remove(this.ghostShape);
-                        this.ghostShape.geometry.dispose();
-                        this.ghostShape.material.dispose();
-                        this.ghostShape = null;
+                    const planeIntersect = new THREE.Vector3();
+                    if (this.raycaster.ray.intersectPlane(this.raycastPlane, planeIntersect)) {
+                        intersectionPoint = planeIntersect;
                     }
                 }
             }
-            return;
-        }
-         
-        if (this.activeTool === 'insert-text') {
-            const point = new THREE.Vector3();
-            if (this.raycaster.ray.intersectPlane(this.raycastPlane, point)) {
-                this.textInsertionPoint = point;
-                this.showTextInputModal();
+            
+            if (!intersectionPoint) return; // Exit if no valid click location is found
+
+            if (!this.isDrawingPoints) {
+                // This is the VERY FIRST click of a new drawing session
+                this.drawPointsStartPoint.copy(intersectionPoint);
+                if (clickedIndex !== -1) {
+                   this.drawPointsStartDbId = targetDbId;
+                } else {
+                   // Create the first point if the click is in empty space
+                   const firstId = await this.batchAddPoints([intersectionPoint], null);
+                   this.drawPointsStartDbId = firstId;
+                }
+                this.isDrawingPoints = true;
+            } else {
+                // This is for all subsequent clicks in a drawing session
+                const lastAddedId = await this.drawPoints(this.drawPointsStartPoint, intersectionPoint, this.drawPointsStartDbId, targetDbId);
+                
+                // --- STATE MANAGEMENT FIX ---
+                // The new "start point" for the next segment is always the point we just clicked on.
+                this.drawPointsStartPoint.copy(intersectionPoint);
+                // The new "start ID" is the ID of the point we clicked on (targetDbId) if it exists,
+                // otherwise it's the ID of the last new point we created (lastAddedId).
+                this.drawPointsStartDbId = targetDbId !== null ? targetDbId : lastAddedId;
             }
-            this.selectTool(null);
-            return;
+            return; // End the function here for persistent drawing mode
         }
 
-        this.clearShapeSelection();
+        this.transformStartPos.set(event.clientX, event.clientY);
+        const coords = this.getPointerCoordinates(event);
+        this.pointer.copy(coords);
+        this.raycaster.setFromCamera(this.pointer, this.camera);
+
+
+        if (this.activeTab === 'waypoint-edit') {
+            const clickedIndex = this.findClosestPoint(event);
+
+            switch (this.activeTool) {
+                case 'interpolate':
+                case 'two-way':
+                    // Special handling for path-based selection tools
+                    if (clickedIndex !== -1) {
+                        const isInterpolate = this.activeTool === 'interpolate';
+                        if (this.pathSelectionStartIndex === null) {
+                            // First click: start a path
+                            if (isInterpolate) document.getElementById('interpolation-panel').classList.remove('hidden');
+                            else document.getElementById('two-way-panel').classList.remove('hidden');
+                            
+                            this.clearSelection(); // Clear to start a new path
+                            this.pathSelectionStartIndex = clickedIndex;
+                            this.selectedIndices.add(clickedIndex);
+                        } else {
+                            // Second click: complete the path
+                            const start = Math.min(this.pathSelectionStartIndex, clickedIndex);
+                            const end = Math.max(this.pathSelectionStartIndex, clickedIndex);
+                            for (let i = start; i <= end; i++) this.selectedIndices.add(i);
+                            this.pathSelectionStartIndex = null; // Reset for next path selection
+                        }
+
+                        this.updateAllColors();
+                        if (isInterpolate) this.updateInterpolationPanel();
+                        else this.updateTwoWayPanel();
+
+                    } else {
+                        // Click on empty space clears selection
+                        this.clearSelection();
+                    }
+                    break;
+                
+                case 'remove-points':
+                case 'move-points':
+                default: // Default behavior for move, remove, and no tool selected
+                    this.handleSelectionPointerDown(clickedIndex, event);
+                    break;
+            }
+        } else if (this.activeTab === 'lane-edit') {
+            const clickedIndex = this.findClosestPoint(event);
+            if (clickedIndex === -1) {
+                this.speedLimitSelection = [];
+                this.updateSpeedLimitPanel();
+                this.clearSelection();
+                return;
+            }
+
+            if (this.activeTool === 'set-speed') {
+                if (this.speedLimitSelection.length >= 2) {
+                    this.speedLimitSelection = []; // Start a new selection
+                }
+                this.speedLimitSelection.push(clickedIndex);
+                this.updateAllColors();
+                this.updateSpeedLimitPanel();
+            } else if (this.activeTool === 'set-op-info') { 
+                if (event.shiftKey) {
+                    if (this.opInfoSelection.has(clickedIndex)) {
+                        this.opInfoSelection.delete(clickedIndex);
+                    } else {
+                        this.opInfoSelection.add(clickedIndex);
+                    }
+                } else {
+                    this.opInfoSelection.clear();
+                    this.opInfoSelection.add(clickedIndex);
+                }
+                this.updateAllColors();
+                this.updateOpInfoPanel();
+            } else { // Default behavior for the tab is lane width editing
+                if (this.laneEditSelection.length < 2 && !this.laneEditSelection.includes(clickedIndex)) {
+                    this.laneEditSelection.push(clickedIndex);
+                } else {
+                    this.laneEditSelection = [clickedIndex];
+                }
+                this.updateLaneEditInfo();
+            }
+        } else if (this.activeTab === 'layout-drawings') {
+            const handleIntersects = this.raycaster.intersectObjects(this.resizeHandles);
+            const shapeIntersects = this.raycaster.intersectObjects(this.shapes);
+
+            if (handleIntersects.length > 0) {
+                const handle = handleIntersects[0].object;
+                this.isResizingShape = true;
+                this.activeHandle = handle;
+                this.controls.enabled = false;
+                
+                const shape = handle.userData.parentShape;
+                const planeIntersect = new THREE.Vector3();
+                this.raycaster.ray.intersectPlane(this.raycastPlane, planeIntersect);
+                
+                this.shapeStartTransform = {
+                    position: shape.position.clone(),
+                    scale: shape.scale.clone(),
+                    startDragPoint: planeIntersect.clone(),
+                    initialSize: new THREE.Box3().setFromObject(shape).getSize(new THREE.Vector3())
+                };
+                return;
+            }
+
+            if (shapeIntersects.length > 0) {
+                const shape = shapeIntersects[0].object;
+                this.selectShape(shape);
+                this.isMovingShape = true;
+                this.controls.enabled = false;
+                
+                const planeIntersect = new THREE.Vector3();
+                this.raycaster.ray.intersectPlane(this.raycastPlane, planeIntersect);
+
+                this.shapeStartTransform = {
+                    position: shape.position.clone(),
+                    offset: shape.position.clone().sub(planeIntersect)
+                };
+                return;
+            }
+
+            if (['square', 'oval', 'arrow'].includes(this.activeTool)) {
+                const point = new THREE.Vector3();
+                if (this.raycaster.ray.intersectPlane(this.raycastPlane, point)) {
+                    this.drawStartPoint.copy(point);
+                    this.isDrawing = true;
+                    this.controls.enabled = false;
+                }
+                return;
+            }
+
+             if (this.activeTool === 'triangle') {
+                const point = new THREE.Vector3();
+                if (this.raycaster.ray.intersectPlane(this.raycastPlane, point)) {
+                    this.drawingTrianglePoints.push(point);
+
+                    if (this.drawingTrianglePoints.length === 3) {
+                        // --- FIX STARTS HERE ---
+                        const [p1, p2, p3] = this.drawingTrianglePoints;
+
+                        // 1. Calculate the bounding box and center of the points
+                        const tempBox = new THREE.Box3().setFromPoints([p1, p2, p3]);
+                        const center = new THREE.Vector3();
+                        tempBox.getCenter(center);
+
+                        // 2. Create the shape using vertices relative to the new center
+                        const shape = new THREE.Shape();
+                        shape.moveTo(p1.x - center.x, p1.y - center.y);
+                        shape.lineTo(p2.x - center.x, p2.y - center.y);
+                        shape.lineTo(p3.x - center.x, p3.y - center.y);
+                        shape.closePath();
+
+                        const geometry = new THREE.ShapeGeometry(shape);
+                        const material = new THREE.MeshBasicMaterial({
+                            color: document.getElementById('fill-color')?.value || '#ffffff',
+                            transparent: true,
+                            opacity: parseFloat(document.getElementById('shape-opacity')?.value || '0.7'),
+                            side: THREE.DoubleSide
+                        });
+
+                        const triangleMesh = new THREE.Mesh(geometry, material);
+                        
+                        // 3. Set the mesh's position to the calculated center
+                        triangleMesh.position.copy(center); 
+                        triangleMesh.position.z = -0.001; // Keep it slightly above the grid
+
+                        triangleMesh.userData = { type: 'triangle', isShape: true };
+                        // --- FIX ENDS HERE ---
+                        
+                        this.shapes.push(triangleMesh);
+                        this.shapeGroup.add(triangleMesh);
+
+                        // Clean up
+                        this.drawingTrianglePoints = [];
+                        if (this.ghostShape) {
+                            this.shapeGroup.remove(this.ghostShape);
+                            this.ghostShape.geometry.dispose();
+                            this.ghostShape.material.dispose();
+                            this.ghostShape = null;
+                        }
+                    }
+                }
+                return;
+            }
+             
+            if (this.activeTool === 'insert-text') {
+                const point = new THREE.Vector3();
+                if (this.raycaster.ray.intersectPlane(this.raycastPlane, point)) {
+                    this.textInsertionPoint = point;
+                    this.showTextInputModal();
+                }
+                this.selectTool(null);
+                return;
+            }
+
+            this.clearShapeSelection();
+        }
     }
-}
 
     
     /**
@@ -3640,7 +3660,6 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
         this.pointer.copy(coords);
         this.raycaster.setFromCamera(this.pointer, this.camera);
         
-        // MODIFIED: Logic for the persistent drawing tool's preview line
         if (this.isDrawingPoints) {
             if (this.ghostLine) {
                 this.scene.remove(this.ghostLine);
@@ -3648,7 +3667,6 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
                 this.ghostLine.material.dispose();
             }
             
-            // Create a dynamic plane for smooth previewing
             this.drawingPlane = new THREE.Plane();
             const cameraDirection = new THREE.Vector3();
             this.camera.getWorldDirection(cameraDirection);
@@ -3672,6 +3690,24 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
             return;
         }
 
+        if (this.isMarqueeSelecting) {
+            this.marqueeEnd.set(event.clientX, event.clientY);
+            const selectionBox = document.getElementById('selection-box');
+            if (selectionBox) {
+                const left = Math.min(this.marqueeStart.x, this.marqueeEnd.x);
+                const top = Math.min(this.marqueeStart.y, this.marqueeEnd.y);
+                const width = Math.abs(this.marqueeStart.x - this.marqueeEnd.x);
+                const height = Math.abs(this.marqueeStart.y - this.marqueeEnd.y);
+                
+                selectionBox.style.left = `${left}px`;
+                selectionBox.style.top = `${top}px`;
+                selectionBox.style.width = `${width}px`;
+                selectionBox.style.height = `${height}px`;
+            }
+            this.updateSelectionFromMarquee();
+            return; 
+        }
+
         const planeIntersect = new THREE.Vector3();
         if (!this.raycaster.ray.intersectPlane(this.raycastPlane, planeIntersect)) {
              this.updateHoverCoordinates(null);
@@ -3681,12 +3717,9 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
 
         if (this.isMovingShape) {
             this.selectedShape.position.copy(currentPoint).add(this.shapeStartTransform.offset);
-            
-            // CORRECTED: Manually sync outline position instead of calling .update()
             if (this.selectedShape.selectionOutline) {
                 this.selectedShape.selectionOutline.position.copy(this.selectedShape.position);
             }
-
             this.updateResizeHandlePositions(this.selectedShape);
             return;
         }
@@ -3694,35 +3727,21 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
         if (this.isResizingShape) {
             const shape = this.selectedShape;
             const handleIndex = this.activeHandle.userData.handleIndex;
-            
             const originalSize = this.shapeStartTransform.initialSize;
             const originalCenter = this.shapeStartTransform.position;
-            
             const anchor = new THREE.Vector3();
-            const handleSign = new THREE.Vector2(
-                (handleIndex === 0 || handleIndex === 3) ? 1 : -1,
-                (handleIndex === 0 || handleIndex === 1) ? 1 : -1
-            );
-            anchor.set(
-                originalCenter.x + (originalSize.x / 2 * handleSign.x),
-                originalCenter.y + (originalSize.y / 2 * handleSign.y),
-                originalCenter.z
-            );
-            
+            const handleSign = new THREE.Vector2( (handleIndex === 0 || handleIndex === 3) ? 1 : -1, (handleIndex === 0 || handleIndex === 1) ? 1 : -1 );
+            anchor.set( originalCenter.x + (originalSize.x / 2 * handleSign.x), originalCenter.y + (originalSize.y / 2 * handleSign.y), originalCenter.z );
             const newWidth = Math.abs(currentPoint.x - anchor.x);
             const newHeight = Math.abs(currentPoint.y - anchor.y);
             const newCenter = new THREE.Vector3().addVectors(anchor, currentPoint).multiplyScalar(0.5);
-
             shape.position.copy(newCenter);
             if (originalSize.x > 0.01) shape.scale.x = (newWidth / originalSize.x) * this.shapeStartTransform.scale.x;
             if (originalSize.y > 0.01) shape.scale.y = (newHeight / originalSize.y) * this.shapeStartTransform.scale.y;
-            
-            // CORRECTED: Manually sync outline position and scale instead of calling .update()
             if (shape.selectionOutline) {
                 shape.selectionOutline.position.copy(shape.position);
                 shape.selectionOutline.scale.copy(shape.scale);
             }
-
             this.updateResizeHandlePositions(shape);
             return;
         }
@@ -3735,7 +3754,6 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
                 const initialDraggedPointPos = this.dragStartPositions.get(this.dragStartIndex);
                 if (initialDraggedPointPos) {
                     const delta = new THREE.Vector3().subVectors(newDragPointPos, initialDraggedPointPos);
-
                     for (const index of this.selectedIndices) {
                         const initialPos = this.dragStartPositions.get(index);
                         if (initialPos) {
@@ -3750,48 +3768,69 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
         }
 
         if (this.isDrawing) {
-            if (this.activeTool === 'triangle' && this.drawingTrianglePoints.length > 0) {
             if (this.ghostShape) {
                 this.shapeGroup.remove(this.ghostShape);
                 this.ghostShape.geometry.dispose();
                 this.ghostShape.material.dispose();
             }
-
-            const points = [...this.drawingTrianglePoints, currentPoint];
-            const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
-            const lineMat = new THREE.LineBasicMaterial({ color: 0xffff00, depthTest: false });
-            this.ghostShape = new THREE.Line(lineGeo, lineMat);
-            this.shapeGroup.add(this.ghostShape);
+            this.ghostShape = this.addShape(this.activeTool, this.drawStartPoint, currentPoint, true);
+            return;
         }
+
+        // --- FIX STARTS HERE: Enhanced Triangle Ghost Preview ---
+        if (this.activeTool === 'triangle' && this.drawingTrianglePoints.length > 0) {
+            if (this.ghostShape) {
+                this.shapeGroup.remove(this.ghostShape);
+                this.ghostShape.geometry.dispose();
+                this.ghostShape.material.dispose();
+                this.ghostShape = null;
+            }
+
+            if (this.drawingTrianglePoints.length === 1) {
+                // After 1 click, draw a dashed line to the cursor
+                const points = [...this.drawingTrianglePoints, currentPoint];
+                const lineGeo = new THREE.BufferGeometry().setFromPoints(points);
+                const lineMat = new THREE.LineDashedMaterial({ color: 0x00ffff, dashSize: 0.1, gapSize: 0.1 });
+                this.ghostShape = new THREE.Line(lineGeo, lineMat);
+                this.ghostShape.computeLineDistances();
+            } else if (this.drawingTrianglePoints.length === 2) {
+                // After 2 clicks, draw a filled ghost triangle
+                const [p1, p2] = this.drawingTrianglePoints;
+                const p3 = currentPoint;
+
+                const shape = new THREE.Shape();
+                shape.moveTo(p1.x, p1.y);
+                shape.lineTo(p2.x, p2.y);
+                shape.lineTo(p3.x, p3.y);
+                shape.closePath();
+
+                const geometry = new THREE.ShapeGeometry(shape);
+                const material = new THREE.MeshBasicMaterial({
+                    color: document.getElementById('fill-color')?.value || '#ffffff',
+                    transparent: true,
+                    opacity: 0.4, // Ghost opacity
+                    side: THREE.DoubleSide
+                });
+
+                this.ghostShape = new THREE.Mesh(geometry, material);
+                this.ghostShape.position.z = -0.001;
+            }
+
+            if (this.ghostShape) {
+                this.shapeGroup.add(this.ghostShape);
+            }
+        }
+        // --- FIX ENDS HERE ---
 
         this.handleHover(event);
-        this.updateHoverCoordinates(this.getWorldCoordinates(event.clientX, event.clientY));
-        
-        if (this.isMarqueeSelecting) {
-            this.marqueeEnd.set(event.clientX, event.clientY);
-            const left = Math.min(this.marqueeStart.x, this.marqueeEnd.x);
-            const top = Math.min(this.marqueeStart.y, this.marqueeEnd.y);
-            const width = Math.abs(this.marqueeStart.x - this.marqueeEnd.x);
-            const height = Math.abs(this.marqueeStart.y - this.marqueeEnd.y);
+    }
 
-            const selectionBox = document.getElementById('selection-box');
-            if (selectionBox) {
-                selectionBox.style.left = `${left}px`;
-                selectionBox.style.top = `${top}px`;
-                selectionBox.style.width = `${width}px`;
-                selectionBox.style.height = `${height}px`;
-            }
-            this.updateSelectionFromMarquee();
-        }
-    }
-    }
+    
     /**
      * Handle pointer up events to finalize interactions
      * * @param {PointerEvent} event - Pointer up event
      */
     onPointerUp(event) {
-        // MODIFIED: This function now does nothing for the persistent drawing tool.
-        // The logic was moved to onPointerDown.
 
         if (this.isDrawing) {
             if (this.ghostShape) {
@@ -4111,20 +4150,7 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
         document.getElementById('generate-turn').addEventListener('click', () => this.generateturn());
 
         // Visual controls
-        const voxelSizeSlider = document.getElementById('voxel-size');
-        if (voxelSizeSlider) {
-            voxelSizeSlider.addEventListener('input', (event) => {
-                const size = parseFloat(event.target.value);
-                if (this.mapObject && this.mapObject.material) {
-                    const pointSizeSlider = document.getElementById('point-size');
-                    const baseSize = pointSizeSlider ? parseFloat(pointSizeSlider.value) : 0.5;
-                    this.mapObject.material.size = baseSize * size;
-                    this.mapObject.material.needsUpdate = true;
-                }
-                const voxelValue = document.getElementById('voxel-value');
-                if (voxelValue) voxelValue.textContent = size.toFixed(1);
-            });
-        }
+      
 
         const opacitySlider = document.getElementById('opacity');
         if (opacitySlider) {
@@ -4167,7 +4193,10 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
 
         // Add direct listeners for buttons that perform an immediate action
         document.getElementById('layout-delete-element').addEventListener('click', () => {
-            this.deleteSelectedShape();
+            if (this.selectedShape) {
+                const modal = document.getElementById('delete-confirm');
+                modal.classList.remove('hidden');
+            }
         });
         
         // Style controls
@@ -4200,16 +4229,6 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
             }
         });
 
-        // Bottom controls
-        document.getElementById('point-size').addEventListener('input', (e) => {
-            if (this.mapObject) this.mapObject.material.size = parseFloat(e.target.value);
-            document.getElementById('size-value').textContent = parseFloat(e.target.value).toFixed(1);
-        });
-        document.getElementById('waypoint-size').addEventListener('input', (e) => {
-            this.dynamicPointSize = parseFloat(e.target.value);
-            this.updateWaypointVisuals();
-            document.getElementById('waypoint-size-value').textContent = this.dynamicPointSize.toFixed(3);
-        });
         document.getElementById('view-mode').addEventListener('change', (e) => this.setView(e.target.value));
 
         // Text input modal
@@ -4257,8 +4276,10 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
                     break;
                 case 'delete':
                 case 'backspace':
-                    if (this.selectedIndices.size > 0) {const modal = document.getElementById('delete-confirm');modal.classList.remove('hidden');}
-                    if (this.selectedShape) this.deleteSelectedShape();
+                    if (this.selectedIndices.size > 0 || this.selectedShape) {
+                        const modal = document.getElementById('delete-confirm');
+                        modal.classList.remove('hidden');
+                    }
                     break;
             }
         });
@@ -4274,6 +4295,18 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
      */
     switchTab(tabName) {
         console.log(`📑 Switching to tab: ${tabName}`);
+        
+        // --- FIX STARTS HERE: Clean up in-progress drawings ---
+        if (this.ghostShape) {
+            this.shapeGroup.remove(this.ghostShape);
+            this.ghostShape.geometry.dispose();
+            this.ghostShape.material.dispose();
+            this.ghostShape = null;
+        }
+        this.drawingTrianglePoints = [];
+        this.isDrawing = false; // Also reset the generic drawing flag
+        // --- FIX ENDS HERE ---
+
         this.activeTab = tabName;
         this.clearSelection();
         this.clearShapeSelection();
@@ -4287,11 +4320,12 @@ async batchAddPoints(points, startDbId = null, endDbId = null) {
         document.getElementById(`tab-${tabName}`).classList.add('active');
         
         // Clear tool selection
-        document.querySelectorAll('.tool-button, .tool-button-large .tool-button-layout').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tool-button, .tool-button-large .tool-button-layout, .action-btn').forEach(b => b.classList.remove('active'));
         this.activeTool = null;
         
         this.updatePanelVisibility(tabName);
     }
+
 
     /**
      * Update panel visibility based on active tab
